@@ -88,7 +88,7 @@ Useful options:
 --system SYSTEM      Select the system and bypass interactive setup
 --backend BACKEND    Advanced override: dolphin, retroarch, or both
 --ip ADDRESS         Override the address advertised in the QR code
---http               Plain HTTP; disables motion sensors on iOS
+--http               Plain HTTP; disables motion sensors on most mobile browsers
 --pointer-only       Keep IR input but send a stable, level IMU
 --gyro               Forward gyroscope data for MotionPlus testing
 --log                Write motion diagnostics under logs/
@@ -115,7 +115,7 @@ controller.
 | System argument | Status | Controller mode | Default backend |
 |---|---|---|---|
 | `nes` | Experimental | Full-screen landscape NES controller | RetroArch/uinput |
-| `wii` | Experimental | Portrait Wii Remote with pointer and motion | Dolphin/DSU |
+| `wii` | Experimental | Wii Remote touch layout with pointer and motion | Dolphin/DSU |
 
 Registered roadmap systems:
 
@@ -173,6 +173,12 @@ the suffix `.partypad-bak`. Dolphin must remain closed while the files change.
 | HOME | PS | Home |
 | D-pad | Pad N/S/W/E | D-pad |
 
+For Mario Kart-style steering, keep screen autorotation locked and hold the
+phone in landscape with its top edge pointing left, like a horizontal Wii
+Remote. Tap the player status on the controller to show live motion diagnostics.
+For comparative device testing, start the server with `--log`; JSONL samples are
+written under the ignored `logs/` directory.
+
 ## RetroArch proof of concept
 
 RetroArch support currently targets Linux's `udev` controller driver. PartyPad
@@ -205,12 +211,13 @@ PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
   standard digital/analog RetroPad and an NES phone layout. Mouse, lightgun,
   paddle, keyboard, rumble, motion, and system-specific layouts are not yet
   implemented. RetroArch support is Linux-only.
-- **Experimental motion:** iOS Safari and Android Chrome use opposite gravity
-  polarity in `accelerationIncludingGravity`; PartyPad normalizes Android to the
-  iOS convention before constructing DSU motion data. Motion remains sensitive
-  to browser and hardware differences and has only limited device coverage.
-- **Wii portrait layout:** the Wii controller and motion frame assume a portrait
-  phone. The NES controller is designed for landscape use.
+- **Experimental motion:** testing on iPhone Safari and Motorola Chrome found
+  opposite gravity polarity in `accelerationIncludingGravity`. PartyPad
+  normalizes Android to the working iOS convention before constructing DSU
+  motion data. Other browser and hardware combinations still need verification.
+- **Wii orientation:** the touch layout is portrait-oriented, while verified
+  Mario Kart steering uses the phone sideways with autorotation locked and its
+  top edge pointing left. Other grip orientations are not yet normalized.
 - **Self-signed HTTPS:** browser warnings are expected. PartyPad does not install
   a certificate authority or transmit certificates off the host.
 - **AP hardware constraints:** some adapters cannot run client and AP modes at
@@ -223,7 +230,8 @@ PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
 
 ## Roadmap
 
-1. Normalize and test motion across iOS and Android devices.
+1. Expand motion testing and normalization across more iOS and Android devices,
+   browsers, and grip orientations.
 2. Add automated integration tests for AP startup and cleanup in a network
    namespace.
 3. Implement shared controller families and add SNES, Genesis, PlayStation, and arcade layouts.

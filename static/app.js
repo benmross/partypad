@@ -7,9 +7,10 @@ let debugOn = false;
 const G = 9.80665;
 const D2R = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-// Chrome on Android reports accelerationIncludingGravity with the opposite
-// gravity polarity from iOS Safari. Normalize to the iOS convention used by
-// PartyPad's DSU mapping. This is a full-vector inversion, not an axis remap.
+// Tested Motorola Chrome reports accelerationIncludingGravity with the opposite
+// gravity polarity from tested iPhone Safari. Normalize Android to the working
+// iOS convention used by PartyPad's DSU mapping. This is a full-vector inversion,
+// not an axis remap; other browser/device combinations remain experimental.
 const IS_ANDROID = /Android/i.test(navigator.userAgent);
 const ACCEL_POLARITY = IS_ANDROID ? -1 : 1;
 

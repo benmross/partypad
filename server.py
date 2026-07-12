@@ -41,8 +41,9 @@ CERT_DIR = HERE / "certs"
 #
 # Dolphin's DSU client names the three accel floats X=Left/Right, Y=Up/Down,
 # Z=Forward/Back, and the three gyro floats pitch, yaw, roll (deg/s).
-# Match WiiMoteDSU's portrait-locked Wii Remote motion frame. Browser iOS
-# accelerationIncludingGravity has the opposite sign from sensors_plus on iOS:
+# Match WiiMoteDSU's Wii Remote motion frame. The browser client first normalizes
+# Android gravity polarity to the working iOS convention. For the verified
+# steering pose, autorotation is locked and the phone's top edge points left:
 #   DSU accel X = phone X, DSU accel Y = phone Z, DSU accel Z = -phone Y
 #   DSU gyro  X =  phone beta, DSU gyro  Y = -phone alpha, DSU gyro  Z = phone gamma
 # Browser DeviceMotion rotationRate alpha/beta/gamma are degrees/s.
@@ -591,7 +592,9 @@ def build_parser():
         "--ip", default=None, help="LAN IP to advertise in the QR (default: auto-detect)"
     )
     parser.add_argument(
-        "--http", action="store_true", help="serve plain HTTP (no motion sensors on iOS)"
+        "--http",
+        action="store_true",
+        help="serve plain HTTP (no motion sensors on most mobile browsers)",
     )
     parser.add_argument("--regen-cert", action="store_true", help="force a new TLS cert")
     parser.add_argument(
