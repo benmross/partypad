@@ -7,6 +7,11 @@ let debugOn = false;
 const G = 9.80665;
 const D2R = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// Chrome on Android reports accelerationIncludingGravity with the opposite
+// gravity polarity from iOS Safari. Normalize to the iOS convention used by
+// PartyPad's DSU mapping. This is a full-vector inversion, not an axis remap.
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
+const ACCEL_POLARITY = IS_ANDROID ? -1 : 1;
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -197,14 +202,17 @@ function onDeviceMotion(e) {
   if (a && a.x != null) {
     const mag = Math.hypot(a.x, a.y, a.z);
     const k = mag > 3 ? 1 / G : 1;        // normalize to g whether m/s^2 or already-g
-    motion.ax = a.x * k; motion.ay = a.y * k; motion.az = a.z * k;
+    motion.ax = ACCEL_POLARITY * a.x * k;
+    motion.ay = ACCEL_POLARITY * a.y * k;
+    motion.az = ACCEL_POLARITY * a.z * k;
   }
   const r = e.rotationRate;
   if (r && r.alpha != null) { motion.ra = r.alpha; motion.rb = r.beta; motion.rg = r.gamma; }
   motion.active = true;
   state.m = { ax: motion.ax, ay: motion.ay, az: motion.az,
               ra: motion.ra, rb: motion.rb, rg: motion.rg,
-              orient: screen.orientation ? screen.orientation.angle : window.orientation || 0 };
+              orient: screen.orientation ? screen.orientation.angle : window.orientation || 0,
+              accel_polarity: ACCEL_POLARITY };
   dirty = true;
 }
 
@@ -244,7 +252,7 @@ function drawDebug() {
   const el = document.getElementById("debug");
   const f = (n) => (n >= 0 ? " " : "") + n.toFixed(2);
   el.textContent =
-    `motion ${motion.active ? "ON" : "off"}  base ${pointerBase ? "set" : "—"}\n` +
+    `motion ${motion.active ? "ON" : "off"}  base ${pointerBase ? "set" : "—"}  accel×${ACCEL_POLARITY}\n` +
     `accel g   x${f(motion.ax)} y${f(motion.ay)} z${f(motion.az)}\n` +
     `rot deg/s a${f(motion.ra)} b${f(motion.rb)} g${f(motion.rg)}\n` +
     `aim deg   az${f(pointer.az / D2R)} el${f(pointer.el / D2R)}\n` +

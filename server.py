@@ -119,6 +119,7 @@ def write_log(logf, slot: int, d: dict):
         "rb": m.get("rb"),
         "rg": m.get("rg"),  # rot rate (deg/s)
         "orient": m.get("orient"),
+        "accel_polarity": m.get("accel_polarity"),
     }
     if d.get("rc"):
         rec["rc"] = 1  # recenter marker

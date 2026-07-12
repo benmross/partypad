@@ -205,9 +205,10 @@ PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
   standard digital/analog RetroPad and an NES phone layout. Mouse, lightgun,
   paddle, keyboard, rumble, motion, and system-specific layouts are not yet
   implemented. RetroArch support is Linux-only.
-- **Experimental motion:** the current mapping was tuned on iOS. Android Chrome,
-  including Pixel devices, may report gravity axes with different signs; Android
-  steering is known to be incorrect and awaits device-side logging and testing.
+- **Experimental motion:** iOS Safari and Android Chrome use opposite gravity
+  polarity in `accelerationIncludingGravity`; PartyPad normalizes Android to the
+  iOS convention before constructing DSU motion data. Motion remains sensitive
+  to browser and hardware differences and has only limited device coverage.
 - **Wii portrait layout:** the Wii controller and motion frame assume a portrait
   phone. The NES controller is designed for landscape use.
 - **Self-signed HTTPS:** browser warnings are expected. PartyPad does not install
