@@ -1,0 +1,132 @@
+:root {
+  --bg: #ffffff;
+  --btn: #f3f4f6;
+  --btn-press: #e2f0fb;
+  --ink: #3a3f46;
+  --arrow: #5f7c8e;
+  --ring: #ededf0;
+  --accent: #3ba0e6;
+  --sd: rgba(0,0,0,.16);   /* soft shadow dark */
+  --sl: #ffffff;           /* soft shadow light */
+}
+
+* { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--ink);
+  font-family: system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  touch-action: none; overscroll-behavior: none; overflow: hidden;
+}
+.hidden { display: none !important; }
+
+/* ---- join ---- */
+.overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100svh; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+.join-card { text-align: center; padding: 2rem; max-width: 22rem; }
+.join-card h1 { font-size: 2.2rem; margin: 0 0 .3rem; color: #222; }
+.join-card .sub { color: #8a919b; margin: 0 0 1.6rem; }
+#join-btn {
+  font-size: 1.2rem; padding: .85rem 3rem; border: none; border-radius: 999px;
+  background: var(--accent); color: #fff; font-weight: 700;
+  box-shadow: 0 6px 16px rgba(59,160,230,.4);
+}
+#join-btn:active { transform: scale(.96); }
+.hint { margin-top: 1.6rem; font-size: .78rem; color: #aab0b8; line-height: 1.4; }
+
+/* ---- pad ---- */
+.pad { position: fixed; top: 0; left: 0; width: 100%; height: 100svh;
+       display: flex; flex-direction: column;
+       padding: env(safe-area-inset-top) 0 max(env(safe-area-inset-bottom), .5rem); }
+.topbar {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  padding: .5rem 1.1rem; font-size: .85rem;
+}
+.status { color: #aab0b8; font-size: .72rem; }
+.debug {
+  position: absolute; top: 2.4rem; left: .8rem; z-index: 40; margin: 0;
+  font-family: ui-monospace, Menlo, monospace; font-size: .68rem; line-height: 1.35;
+  color: #445; background: rgba(255,255,255,.85); padding: .4rem .6rem; border-radius: .4rem;
+  box-shadow: 0 1px 6px rgba(0,0,0,.12); pointer-events: none; white-space: pre;
+}
+.player { color: var(--ink); font-weight: 700; font-size: 1.15rem; min-width: 1.5rem; text-align: right; }
+
+.controls {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: space-evenly;
+  padding: .3rem 0 1rem;
+}
+
+/* neumorphic button base */
+.btn, .recenter, .dpad {
+  position: relative;
+  background: var(--btn);
+  box-shadow: 5px 6px 12px var(--sd), -4px -5px 11px var(--sl);
+  border: none; color: var(--ink);
+}
+
+/* Enlarged tap areas (invisible), never larger vertically than the visual button,
+   so stacked buttons can NEVER overlap regardless of spacing. A/B/1/2 become
+   full-width tap bands; taps land wherever your thumb does at that height. */
+.btn.a::after, .btn.bkey::after, .btn.num::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -50vw; right: -50vw;
+}
+/* System row buttons sit side-by-side, so extend only into the safe gaps
+   (outer sides empty; inner reach stays under half the 6vmin gap). */
+.btn.sys::after, .btn.home::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -2.4vmin; right: -2.4vmin;
+}
+.btn:active, .recenter:active { box-shadow: inset 3px 4px 9px var(--sd), inset -3px -4px 8px var(--sl); }
+.btn.pressed { background: var(--btn-press); box-shadow: inset 3px 4px 9px var(--sd), inset -2px -3px 7px var(--sl); }
+
+/* D-pad */
+.dpad {
+  width: min(58vmin, 24.94svh); height: min(58vmin, 24.94svh);
+  max-width: 300px; max-height: 300px;
+  border-radius: 50%; display: grid; place-items: center; padding: 0;
+}
+.dpad svg { width: 100%; height: 100%; display: block; }
+.dpad-ring { fill: var(--ring); }
+.dpad-cross { fill: #fbfbfc; }
+.dpad-center { fill: #e9eaee; }
+.arrow { fill: var(--arrow); transition: fill .05s; }
+.arrow.on { fill: var(--accent); }
+
+/* recenter pill */
+.recenter {
+  width: min(58vmin, 24.94svh); max-width: 300px;
+  height: max(min(6.2vmin, 2.67svh), 2.2rem);
+  border-radius: .7rem; font-size: 1rem; color: #6b7280; letter-spacing: .02em;
+}
+
+/* round buttons */
+.btn.circ { border-radius: 50%; display: grid; place-items: center; padding: 0; }
+.btn.circ span { font-weight: 600; }
+.btn.circ.a { width: min(26vmin, 11.18svh); height: min(26vmin, 11.18svh); max-width: 140px; max-height: 140px; }
+.btn.circ.a span { font-size: 8vmin; }
+.btn.circ.num { width: min(22vmin, 9.46svh); height: min(22vmin, 9.46svh); max-width: 120px; max-height: 120px; }
+.btn.circ.num span { font-size: 6.5vmin; }
+
+/* B trigger (tall rounded rect) */
+.btn.bkey {
+  width: min(26vmin, 11.18svh); height: min(32vmin, 13.76svh);
+  max-width: 150px; max-height: 185px;
+  border-radius: 1rem; display: grid; place-items: center;
+}
+.btn.bkey span { font-size: 8vmin; font-weight: 600; }
+
+/* system row */
+.sysrow { display: flex; align-items: center; gap: 6vmin; }
+.btn.circ.sys { width: min(13vmin, 5.59svh); height: min(13vmin, 5.59svh); max-width: 66px; max-height: 66px; }
+.btn.circ.home { width: min(15vmin, 6.45svh); height: min(15vmin, 6.45svh); max-width: 76px; max-height: 76px; }
+.btn.circ svg { width: 58%; height: 58%; }
+.btn.circ svg rect, .btn.circ svg path { fill: #2f343b; }
+
+/* keep a hard cap so huge phones/tablets don't over-scale text */
+@media (min-aspect-ratio: 3/4) {
+  .btn.circ.a span, .btn.bkey span { font-size: 2.6rem; }
+  .btn.circ.num span { font-size: 2.1rem; }
+}

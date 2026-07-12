@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ffffff">
+<title>partypad</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="join" class="overlay">
+    <div class="join-card">
+      <h1>partypad</h1>
+      <p class="sub">Tap to grab a Wii Remote</p>
+      <button id="join-btn">Join</button>
+      <p class="hint">Hold your phone upright. For full-screen, use Share → “Add to Home Screen”.</p>
+    </div>
+  </div>
+
+  <div id="pad" class="pad hidden">
+    <div class="topbar">
+      <span id="status" class="status">connecting…</span>
+      <span id="player" class="player">0</span>
+    </div>
+    <pre id="debug" class="debug hidden"></pre>
+
+    <div class="controls">
+      <!-- D-pad -->
+      <div id="dpad" class="dpad" role="group" aria-label="D-pad">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="49" class="dpad-ring"/>
+          <path class="dpad-cross" d="M38 12 h24 a4 4 0 0 1 4 4 v18 h18 a4 4 0 0 1 4 4 v24 a4 4 0 0 1 -4 4 h-18 v18 a4 4 0 0 1 -4 4 h-24 a4 4 0 0 1 -4 -4 v-18 h-18 a4 4 0 0 1 -4 -4 v-24 a4 4 0 0 1 4 -4 h18 v-18 a4 4 0 0 1 4 -4 z"/>
+          <rect class="dpad-center" x="43" y="43" width="14" height="14" rx="2"/>
+          <path id="arU" class="arrow" d="M50 20 l-7 8 h4 v8 h6 v-8 h4 z"/>
+          <path id="arD" class="arrow" d="M50 80 l-7 -8 h4 v-8 h6 v8 h4 z"/>
+          <path id="arL" class="arrow" d="M20 50 l8 -7 v4 h8 v6 h-8 v4 z"/>
+          <path id="arR" class="arrow" d="M80 50 l-8 -7 v4 h-8 v6 h8 v4 z"/>
+        </svg>
+      </div>
+
+      <button id="recenter" class="recenter">recenter</button>
+
+      <button class="btn circ a" data-field="cross"><span>A</span></button>
+
+      <button class="btn bkey" data-field="square"><span>B</span></button>
+
+      <div class="sysrow">
+        <button class="btn circ sys" data-field="share" aria-label="minus">
+          <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="2.4" rx="1.2"/></svg>
+        </button>
+        <button class="btn circ home" data-field="ps" aria-label="home">
+          <svg viewBox="0 0 24 24"><path d="M12 4 3 12h2.4v7.5h5V14h3.2v5.5h5V12H21z"/></svg>
+        </button>
+        <button class="btn circ sys" data-field="options" aria-label="plus">
+          <svg viewBox="0 0 24 24"><path d="M10.8 5h2.4v5.8H19v2.4h-5.8V19h-2.4v-5.8H5v-2.4h5.8z"/></svg>
+        </button>
+      </div>
+
+      <button class="btn circ num" data-field="triangle"><span>1</span></button>
+      <button class="btn circ num" data-field="circle"><span>2</span></button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

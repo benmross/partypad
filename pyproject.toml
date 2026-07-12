@@ -1,0 +1,28 @@
+[project]
+name = "partypad"
+version = "0.1.0"
+description = "Turn phone browsers into Wii controllers for Dolphin"
+requires-python = ">=3.11"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Ben Ross" }]
+keywords = ["dolphin", "emulation", "controller", "dsu", "cemuhook"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Games/Entertainment",
+]
+dependencies = [
+    "aiohttp>=3.9",
+    "qrcode>=7.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/benmross/partypad"
+Issues = "https://github.com/benmross/partypad/issues"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Generated runtime data. Keep the directories available via .gitkeep files.
+certs/*
+!certs/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Local tooling and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
