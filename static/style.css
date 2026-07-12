@@ -124,6 +124,165 @@ html, body {
 .btn.circ.home { width: min(15vmin, 6.45svh); height: min(15vmin, 6.45svh); max-width: 76px; max-height: 76px; }
 .btn.circ svg { width: 58%; height: 58%; }
 .btn.circ svg rect, .btn.circ svg path { fill: #2f343b; }
+.nes-label { display: none; }
+.nes-decoration { display: none; }
+
+/* NES proof-of-concept: a landscape, two-button controller using the same
+   semantic inputs as the generic virtual gamepad. */
+.profile-nes {
+  --bg: #d8d7dc; --btn: #ececef; --btn-press: #9f1f36; --accent: #d64a57;
+  --nes-red: #d43c45; --nes-dark: #242426; --nes-bezel: #c8c7cc;
+}
+.profile-nes .pad { background: linear-gradient(#e6e5e9, #d3d2d7); }
+.profile-nes .topbar { padding: .35rem max(1.1rem, env(safe-area-inset-right)); }
+.profile-nes .controls {
+  position: relative; display: block; overflow: hidden;
+  margin: 0 max(2vw, env(safe-area-inset-right)) max(2.5vh, env(safe-area-inset-bottom));
+  padding: 0; border-radius: 3.4svh; background: #d0cfd4;
+  box-shadow: inset 0 0 0 1.7svh #f0eff2, 0 .8svh 1.5svh rgba(0,0,0,.18);
+}
+.profile-nes .controls::before {
+  content: ""; position: absolute; inset: 4.2svh 3.4vw;
+  border-radius: 1.2svh; background: linear-gradient(100deg, #29292b, #202022);
+  box-shadow: inset 0 0 0 .35svh #161618, inset 0 .5svh 1.3svh rgba(255,255,255,.08);
+  pointer-events: none;
+}
+.profile-nes .nes-decoration {
+  display: grid; position: absolute; left: 39%; right: 31%; top: 14%;
+  grid-template-rows: 1fr 1fr 1.15fr; gap: 1.4svh; pointer-events: none;
+}
+.profile-nes .nes-decoration span {
+  height: 5.2svh; border-radius: .7svh; background: #aaa9ae;
+}
+.profile-nes .nes-decoration .wordmark {
+  display: grid; place-items: center; color: var(--nes-red); background: #bbbabe;
+  font: italic 800 min(2.7vw, 5svh)/1 system-ui, sans-serif; letter-spacing: .08em;
+}
+.profile-nes .dpad {
+  position: absolute; z-index: 2; left: 3.4vw; top: 4.2svh; bottom: 4.2svh;
+  width: 35%; height: auto; max-width: none; max-height: none;
+  box-shadow: none; background: transparent; transform: none;
+}
+.profile-nes .dpad svg {
+  width: 58svh; height: 58svh; max-width: 82%; max-height: 76%;
+  overflow: visible; pointer-events: none;
+}
+.profile-nes .dpad-ring, .profile-nes .dpad-center { fill: transparent; }
+.profile-nes .dpad-cross {
+  fill: #29292b; stroke: var(--nes-bezel); stroke-width: 4.5;
+  paint-order: stroke fill; filter: drop-shadow(0 1.4px 1.2px #000);
+}
+.profile-nes .dpad-center { fill: #202022; stroke: #09090a; stroke-width: 1; }
+.profile-nes .arrow { fill: #65656a; }
+.profile-nes .arrow.on { fill: var(--nes-red); }
+.profile-nes .recenter, .profile-nes .home, .profile-nes .num { display: none; }
+.profile-nes .btn.a, .profile-nes .btn.bkey {
+  position: absolute; z-index: 3; top: 58%; width: 28svh; height: 28svh;
+  max-width: 14vw; max-height: 34%; border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #f05b5c 0 9%, #dc3f48 35%, #bd2738 74%);
+  color: var(--nes-red); border: .7svh solid #e0dfe3;
+  box-shadow: 0 0 0 2.2svh var(--nes-bezel), 0 1.5svh 1.5svh rgba(0,0,0,.45);
+}
+.profile-nes .btn.a { right: 6%; transform: translateY(-50%); }
+.profile-nes .btn.bkey { right: 23%; transform: translateY(-50%); }
+.profile-nes .btn.a span, .profile-nes .btn.bkey span {
+  position: absolute; top: calc(100% + 3.2svh); left: 50%; transform: translateX(-50%);
+  color: var(--nes-red); font-size: min(4.3vw, 7svh); font-weight: 900; line-height: 1;
+}
+.profile-nes .btn.a::after, .profile-nes .btn.bkey::after { inset: -3.2svh; }
+.profile-nes .btn.a.pressed, .profile-nes .btn.bkey.pressed {
+  transform: translateY(-47%) scale(.97);
+  background: radial-gradient(circle at 42% 38%, #d63845, #a91e32 76%);
+  box-shadow: 0 0 0 2.2svh var(--nes-bezel), 0 .6svh .7svh rgba(0,0,0,.4);
+}
+.profile-nes .sysrow {
+  position: absolute; z-index: 3; left: 52%; bottom: 11%; transform: translateX(-50%);
+  gap: 4svh; padding: 3.1svh 3.8svh; border-radius: .8svh; background: #d0cfd4;
+  box-shadow: inset 0 0 0 .6svh #a3a2a7, 0 .7svh 1svh rgba(0,0,0,.3);
+}
+.profile-nes .btn.circ.sys {
+  width: 18svh; height: 7.5svh; max-width: 10vw; max-height: none;
+  border-radius: 999px; background: #4a4a4d; color: white;
+  box-shadow: inset 0 .6svh .7svh rgba(255,255,255,.1), 0 .7svh .7svh rgba(0,0,0,.45);
+}
+.profile-nes .btn.circ.sys::after { inset: -1.6svh; }
+.profile-nes .btn.circ.sys.pressed { background: #303033; transform: translateY(.25svh); }
+.profile-nes .wii-label { display: none; }
+.profile-nes .nes-label { display: inline; font-size: min(1.65vw, 3.3svh); font-weight: 800; }
+
+/* On the NES layout the entire viewport is an input surface. These five
+   non-overlapping regions cover 0–40% (D-pad), 40–50% (Select), 50–60%
+   (Start), 60–80% (B), and 80–100% (A). */
+.profile-nes .pad { padding: 0; }
+.profile-nes .topbar {
+  position: absolute; z-index: 20; inset: 0 0 auto; padding: .45rem 1rem;
+  pointer-events: none; color: rgba(255,255,255,.65);
+}
+.profile-nes .controls {
+  position: absolute; inset: 0; margin: 0; border-radius: 0;
+  background: linear-gradient(100deg, #29292b, #202022);
+  box-shadow: none; overflow: hidden;
+}
+.profile-nes .controls::before { display: none; }
+.profile-nes .nes-decoration { left: 40.5%; right: 39.5%; top: 12%; }
+
+.profile-nes .dpad {
+  left: 0; top: 0; bottom: 0; width: 40%; height: 100%;
+  max-width: none; max-height: none;
+}
+.profile-nes .dpad svg { width: 66svh; height: 66svh; max-width: 76%; max-height: 76%; }
+
+.profile-nes .sysrow { display: contents; }
+.profile-nes .btn.circ.sys {
+  position: absolute; z-index: 4; top: 0; bottom: 0; width: 10%; height: 100%;
+  max-width: none; max-height: none; padding: 0; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none; transform: none;
+}
+.profile-nes .btn.circ.sys:first-child { left: 40%; }
+.profile-nes .btn.circ.sys:last-child { left: 50%; }
+.profile-nes .btn.circ.sys::before {
+  content: ""; position: absolute; left: 8%; right: 8%; bottom: 17%; height: 8svh;
+  border-radius: 999px; background: #4a4a4d;
+  box-shadow: inset 0 .6svh .7svh rgba(255,255,255,.1), 0 .7svh .7svh rgba(0,0,0,.45);
+}
+.profile-nes .btn.circ.sys::after { display: none; }
+.profile-nes .btn.circ.sys .nes-label {
+  position: absolute; z-index: 1; left: 50%; bottom: calc(17% + 2.2svh);
+  transform: translateX(-50%); white-space: nowrap;
+}
+.profile-nes .btn.circ.sys.pressed { background: rgba(255,255,255,.035); transform: none; }
+.profile-nes .btn.circ.sys.pressed::before {
+  bottom: calc(17% - .25svh); background: #303033;
+  box-shadow: inset 0 .5svh .7svh rgba(0,0,0,.5), 0 .25svh .3svh rgba(0,0,0,.4);
+}
+
+.profile-nes .btn.a, .profile-nes .btn.bkey {
+  top: 0; bottom: 0; width: 20%; height: 100%; max-width: none; max-height: none;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  transform: none; color: var(--nes-red);
+}
+.profile-nes .btn.bkey { left: 60%; right: auto; }
+.profile-nes .btn.a { left: 80%; right: auto; }
+.profile-nes .btn.a::before, .profile-nes .btn.bkey::before {
+  content: ""; position: absolute; left: 50%; top: 54%; transform: translate(-50%, -50%);
+  width: 30svh; height: 30svh; max-width: 74%; max-height: 38%; border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #f05b5c 0 9%, #dc3f48 35%, #bd2738 74%);
+  border: .7svh solid #e0dfe3;
+  box-shadow: 0 0 0 2.2svh var(--nes-bezel), 0 1.5svh 1.5svh rgba(0,0,0,.45);
+}
+.profile-nes .btn.a::after, .profile-nes .btn.bkey::after { display: none; }
+.profile-nes .btn.a span, .profile-nes .btn.bkey span {
+  top: calc(54% + 20svh); left: 50%; transform: translateX(-50%);
+  font-size: min(4.3vw, 7svh);
+}
+.profile-nes .btn.a.pressed, .profile-nes .btn.bkey.pressed {
+  transform: none; background: rgba(255,255,255,.035); box-shadow: none;
+}
+.profile-nes .btn.a.pressed::before, .profile-nes .btn.bkey.pressed::before {
+  top: calc(54% + .8svh); transform: translate(-50%, -50%) scale(.97);
+  background: radial-gradient(circle at 42% 38%, #d63845, #a91e32 76%);
+  box-shadow: 0 0 0 2.2svh var(--nes-bezel), 0 .6svh .7svh rgba(0,0,0,.4);
+}
 
 /* keep a hard cap so huge phones/tablets don't over-scale text */
 @media (min-aspect-ratio: 3/4) {

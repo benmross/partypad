@@ -22,6 +22,15 @@ bug reports and small, testable changes are especially valuable.
 Do not commit generated certificates, private keys, motion logs, virtual
 environments, or machine-specific emulator configuration.
 
+## Adding a system
+
+System selection is defined in `systems.py`. Keep the system, controller mode,
+and emulator backend separable: several systems may share a controller family,
+while one system may eventually need multiple core-specific devices. Leave new
+registry entries marked unsupported until the layout, canonical mapping,
+backend behavior, tests, and README status are all present. Never fall back to a
+different system's controller without telling the user.
+
 ## Networking changes
 
 Changes to `ap_helper.py` require extra care because it runs as root. Keep every

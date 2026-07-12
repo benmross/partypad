@@ -17,6 +17,7 @@ function connect() {
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.t === "welcome") {
+      applyControllerMode(m.controller_mode || "wii", m.system);
       document.getElementById("player").textContent = m.player;
       setStatus("Player " + m.player);
     } else if (m.t === "full") {
@@ -25,6 +26,31 @@ function connect() {
   };
 }
 function setStatus(s) { document.getElementById("status").textContent = s; }
+
+function applyControllerMode(mode, system) {
+  document.body.dataset.system = system || mode;
+  document.body.dataset.controllerMode = mode;
+  document.body.classList.toggle("profile-nes", mode === "nes");
+  document.body.classList.toggle("profile-wii", mode === "wii");
+  const a = document.querySelector(".btn.a");
+  const b = document.querySelector(".btn.bkey");
+  if (mode === "nes") {
+    // Mesen's default Standard Controller maps NES A/B to RetroPad A/B.
+    // The udev profile maps those to the east/south physical positions.
+    a.dataset.field = "circle";
+    b.dataset.field = "cross";
+    document.querySelector(".join-card .sub").textContent = "Tap to grab an NES controller";
+    document.querySelector(".hint").textContent = "Turn your phone sideways for the controller layout.";
+  } else {
+    a.dataset.field = "cross";
+    b.dataset.field = "square";
+  }
+}
+
+fetch("/config")
+  .then((response) => response.json())
+  .then((config) => applyControllerMode(config.controller_mode || "wii", config.system))
+  .catch(() => applyControllerMode("wii", "wii"));
 
 let pendingRc = false;
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -51,10 +77,10 @@ function setButton(field, down) {
 // ---- momentary buttons (multitouch) ----
 function bindButtons() {
   document.querySelectorAll("[data-field]").forEach((el) => {
-    const field = el.dataset.field;
     const press = (e) => { e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch {}
-      el.classList.add("pressed"); setButton(field, true); };
-    const release = (e) => { e.preventDefault(); el.classList.remove("pressed"); setButton(field, false); };
+      el.classList.add("pressed"); setButton(el.dataset.field, true); };
+    const release = (e) => { e.preventDefault(); el.classList.remove("pressed");
+      setButton(el.dataset.field, false); };
     el.addEventListener("pointerdown", press);
     el.addEventListener("pointerup", release);
     el.addEventListener("pointercancel", release);
@@ -79,17 +105,42 @@ function bindDpad() {
     const r = dpad.getBoundingClientRect();
     const nx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
     const ny = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
-    apply(ny < -DEAD, ny > DEAD, nx < -DEAD, nx > DEAD);
+    if (document.body.classList.contains("profile-nes")) {
+      // The full left region is live. Use angular sectors with diagonal support,
+      // rather than leaving a dead area around the visual D-pad.
+      const ax = Math.abs(nx), ay = Math.abs(ny);
+      apply(ny < 0 && ay >= ax * 0.45, ny >= 0 && ay >= ax * 0.45,
+            nx < 0 && ax >= ay * 0.45, nx >= 0 && ax >= ay * 0.45);
+    } else {
+      apply(ny < -DEAD, ny > DEAD, nx < -DEAD, nx > DEAD);
+    }
   };
-  const start = (e) => { if (activeId !== null) return; e.preventDefault();
-    activeId = e.pointerId; try { dpad.setPointerCapture(e.pointerId); } catch {} update(e); };
+  const clear = () => {
+    activeId = null;
+    apply(false, false, false, false);
+  };
+  const start = (e) => {
+    e.preventDefault();
+    // A missing pointerup must never lock out subsequent touches. A new touch
+    // takes ownership and clears any direction left behind by the old pointer.
+    if (activeId !== null && activeId !== e.pointerId) clear();
+    activeId = e.pointerId;
+    try { dpad.setPointerCapture(e.pointerId); } catch {}
+    update(e);
+  };
   const move = (e) => { if (e.pointerId !== activeId) return; e.preventDefault(); update(e); };
-  const end = (e) => { if (e.pointerId !== activeId) return; activeId = null; apply(false, false, false, false); };
+  const end = (e) => { if (e.pointerId === activeId) clear(); };
   dpad.addEventListener("pointerdown", start);
   dpad.addEventListener("pointermove", move);
   dpad.addEventListener("pointerup", end);
   dpad.addEventListener("pointercancel", end);
   dpad.addEventListener("lostpointercapture", end);
+  // Some mobile browsers can lose capture during fullscreen/orientation/UI
+  // transitions. Window-level releases and lifecycle changes are fallbacks.
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+  window.addEventListener("blur", clear);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) clear(); });
 }
 
 function bindRecenter() {

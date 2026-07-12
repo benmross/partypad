@@ -14,9 +14,9 @@
   <div id="join" class="overlay">
     <div class="join-card">
       <h1>partypad</h1>
-      <p class="sub">Tap to grab a Wii Remote</p>
+      <p class="sub">Tap to grab a controller</p>
       <button id="join-btn">Join</button>
-      <p class="hint">Hold your phone upright. For full-screen, use Share → “Add to Home Screen”.</p>
+      <p class="hint">For full-screen, use Share → “Add to Home Screen”.</p>
     </div>
   </div>
 
@@ -28,6 +28,9 @@
     <pre id="debug" class="debug hidden"></pre>
 
     <div class="controls">
+      <div class="nes-decoration" aria-hidden="true">
+        <span></span><span></span><span class="wordmark">PARTYPAD</span>
+      </div>
       <!-- D-pad -->
       <div id="dpad" class="dpad" role="group" aria-label="D-pad">
         <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -49,13 +52,15 @@
 
       <div class="sysrow">
         <button class="btn circ sys" data-field="share" aria-label="minus">
-          <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="2.4" rx="1.2"/></svg>
+          <svg class="wii-label" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="2.4" rx="1.2"/></svg>
+          <span class="nes-label">SELECT</span>
         </button>
         <button class="btn circ home" data-field="ps" aria-label="home">
           <svg viewBox="0 0 24 24"><path d="M12 4 3 12h2.4v7.5h5V14h3.2v5.5h5V12H21z"/></svg>
         </button>
         <button class="btn circ sys" data-field="options" aria-label="plus">
-          <svg viewBox="0 0 24 24"><path d="M10.8 5h2.4v5.8H19v2.4h-5.8V19h-2.4v-5.8H5v-2.4h5.8z"/></svg>
+          <svg class="wii-label" viewBox="0 0 24 24"><path d="M10.8 5h2.4v5.8H19v2.4h-5.8V19h-2.4v-5.8H5v-2.4h5.8z"/></svg>
+          <span class="nes-label">START</span>
         </button>
       </div>
 

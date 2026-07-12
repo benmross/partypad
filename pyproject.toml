@@ -1,12 +1,12 @@
 [project]
 name = "partypad"
 version = "0.1.0"
-description = "Turn phone browsers into Wii controllers for Dolphin"
+description = "Turn phone browsers into controllers for Dolphin and RetroArch"
 requires-python = ">=3.11"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Ben Ross" }]
-keywords = ["dolphin", "emulation", "controller", "dsu", "cemuhook"]
+keywords = ["dolphin", "retroarch", "emulation", "controller", "dsu", "uinput"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
@@ -16,6 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "aiohttp>=3.9",
+    "evdev>=1.7",
     "qrcode>=7.4",
 ]
 

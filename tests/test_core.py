@@ -7,6 +7,9 @@ import ap_helper
 import hotspot
 import server
 import setup_dolphin
+import setup_retroarch
+import systems
+import uinput_backend
 
 
 class DSUProtocolTests(unittest.TestCase):
@@ -21,6 +24,81 @@ class DSUProtocolTests(unittest.TestCase):
         pad.update_from_json({"left_x": 2, "left_y": -2, "px": 4, "py": -4})
         self.assertEqual((pad.left_x, pad.left_y), (1.0, -1.0))
         self.assertEqual((pad.right_x, pad.right_y), (1.0, -1.0))
+
+
+class UInputBackendTests(unittest.TestCase):
+    def test_axis_value_is_clamped_and_signed(self):
+        self.assertEqual(uinput_backend.axis_value(-2), uinput_backend.AXIS_MIN)
+        self.assertEqual(uinput_backend.axis_value(0), 0)
+        self.assertEqual(uinput_backend.axis_value(2), uinput_backend.AXIS_MAX)
+
+    def test_pad_events_map_nes_buttons_and_hat(self):
+        pad = server.PadState(0)
+        pad.update_from_json(
+            {"b": {"cross": True, "square": True, "dpad_up": True, "dpad_left": True}}
+        )
+        events = uinput_backend.pad_events(pad)
+        e = uinput_backend.ecodes
+        self.assertEqual(events[(e.EV_KEY, e.BTN_SOUTH)], 1)
+        self.assertEqual(events[(e.EV_KEY, e.BTN_WEST)], 1)
+        self.assertEqual(events[(e.EV_ABS, e.ABS_HAT0X)], -1)
+        self.assertEqual(events[(e.EV_ABS, e.ABS_HAT0Y)], -1)
+
+    def test_uinput_pad_only_emits_changes_and_neutralizes(self):
+        device = Mock()
+        output = uinput_backend.UInputPad(0, device)
+        pad = server.PadState(0)
+        output.update(pad)
+        first_count = device.write.call_count
+        output.update(pad)
+        self.assertEqual(device.write.call_count, first_count)
+        pad.update_from_json({"b": {"cross": True}})
+        output.update(pad)
+        self.assertEqual(device.write.call_count, first_count + 1)
+        output.neutralize()
+        self.assertEqual(device.write.call_args.args[-1], 0)
+        self.assertGreaterEqual(device.syn.call_count, 3)
+
+
+class SystemSelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.parser = server.build_parser()
+
+    def test_supported_systems_select_their_backend_and_controller_mode(self):
+        nes, nes_backend = server.resolve_system(self.parser.parse_args(["--system", "nes"]))
+        wii, wii_backend = server.resolve_system(self.parser.parse_args(["--system", "wii"]))
+        self.assertEqual((nes.controller_mode, nes_backend), ("nes", "retroarch"))
+        self.assertEqual((wii.controller_mode, wii_backend), ("wii", "dolphin"))
+
+    def test_interactive_setup_accepts_number_or_id(self):
+        output = []
+        selected = server.resolve_system(
+            self.parser.parse_args([]), input_func=lambda _: "1", output=output.append
+        )[0]
+        self.assertIn(selected, systems.SUPPORTED_SYSTEMS)
+        self.assertTrue(any("choose the system" in line for line in output))
+
+    def test_planned_system_is_known_but_rejected_honestly(self):
+        args = self.parser.parse_args(["--system", "snes"])
+        with self.assertRaisesRegex(ValueError, "registered for future support"):
+            server.resolve_system(args)
+
+    def test_legacy_backend_still_selects_corresponding_system(self):
+        system, backend = server.resolve_system(
+            self.parser.parse_args(["--backend", "retroarch"])
+        )
+        self.assertEqual((system.id, backend), ("nes", "retroarch"))
+
+    def test_every_requested_future_system_is_registered(self):
+        requested = {
+            "amiga", "amstradcpc", "arcade", "atari2600", "atari5200", "atari7800",
+            "atarilynx", "bbcmicro", "c64", "coleco", "cps", "daphne", "doom",
+            "dosbox", "fba", "fds", "gamegear", "gb", "gba", "gbc", "gw", "intelli",
+            "mastersystem", "megadrive", "msx", "neogeo", "ngp", "pcecd", "pcengine",
+            "pico8", "pokemini", "psx", "quake", "scummvm", "sega32x", "segacd",
+            "sg-1000", "snes", "supervision", "test", "tic80", "vb", "wsc", "zx",
+        }
+        self.assertTrue(requested.issubset(systems.SYSTEMS))
 
 
 class HotspotTests(unittest.TestCase):
@@ -57,6 +135,30 @@ class DolphinConfigTests(unittest.TestCase):
         self.assertEqual(sections[0], (None, ["note"]))
         self.assertEqual(sections[1], ("[One]", ["a=1"]))
         self.assertEqual(sections[2], ("[Two]", ["b=2"]))
+
+
+class RetroArchConfigTests(unittest.TestCase):
+    def test_installer_is_reversible(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "udev" / "PartyPad Controller.cfg"
+            setup_retroarch.install(destination)
+            self.assertEqual(destination.read_bytes(), setup_retroarch.SOURCE.read_bytes())
+            setup_retroarch.revert(destination)
+            self.assertFalse(destination.exists())
+
+    def test_installer_preserves_preexisting_profile(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "PartyPad Controller.cfg"
+            destination.write_text("user profile\n")
+            setup_retroarch.install(destination)
+            setup_retroarch.revert(destination)
+            self.assertEqual(destination.read_text(), "user profile\n")
 
 
 if __name__ == "__main__":

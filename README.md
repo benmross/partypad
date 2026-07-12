@@ -1,6 +1,6 @@
 # PartyPad
 
-PartyPad turns phones into motion-capable controllers for the Dolphin emulator.
+PartyPad turns phones into controllers for Dolphin and, experimentally, RetroArch.
 Players scan a QR code, open a browser, and are assigned one of four controller
 slots—no phone app or per-player IP configuration required.
 
@@ -10,7 +10,8 @@ slots—no phone app or per-player IP configuration required.
 
 ```text
 phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
-                                      127.0.0.1:26760
+                                |
+                                +--uinput/evdev--> RetroArch
 ```
 
 ## Current goals
@@ -19,13 +20,14 @@ phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
 - Provide a faithful Wii Remote-style touch layout with motion and IR input.
 - Work without venue Wi-Fi by safely creating a temporary Linux access point.
 - Keep setup local, transparent, reversible, and free of hosted services.
-- Add a controller backend for RetroArch and other emulators in the future.
+- Grow RetroArch support from an NES proof of concept to authentic system layouts.
 
 ## What works today
 
 - Up to four browser controllers with fixed DSU/cemuhook slots.
 - Wii Remote buttons, D-pad, accelerometer, optional gyroscope, and IR pointer.
 - Automatic Dolphin configuration with backups.
+- Experimental four-player Linux uinput backend and landscape NES layout for RetroArch.
 - HTTPS with a locally generated self-signed certificate for browser sensors.
 - Optional `--ap` mode with Wi-Fi and URL QR codes.
 - Internet sharing through the AP when the host has an active default route.
@@ -36,7 +38,8 @@ phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
 
 - Linux and Python 3.11 or newer.
 - [`uv`](https://docs.astral.sh/uv/) for the documented workflow.
-- Dolphin for the currently supported emulator backend.
+- Dolphin and/or RetroArch, depending on the selected backend.
+- Access to `/dev/uinput` for RetroArch (commonly provided by the `input` group).
 - A phone with a modern browser on the same network.
 
 Access-point mode additionally requires:
@@ -59,6 +62,22 @@ uv sync
 uv run python server.py
 ```
 
+With no arguments, PartyPad asks which supported system will be played:
+
+```text
+PartyPad setup — choose the system being played:
+  1. Nintendo Entertainment System [nes] — RetroArch via uinput
+  2. Nintendo Wii [wii] — Dolphin via DSU
+System:
+```
+
+For scripts, shortcuts, and unattended startup, bypass the question explicitly:
+
+```sh
+uv run python server.py --system nes
+uv run python server.py --system wii
+```
+
 Scan the URL QR code from each phone. The HTTPS certificate is self-signed, so
 each phone must accept the browser warning once before joining.
 
@@ -66,6 +85,8 @@ Useful options:
 
 ```text
 --port 8080          Web server port
+--system SYSTEM      Select the system and bypass interactive setup
+--backend BACKEND    Advanced override: dolphin, retroarch, or both
 --ip ADDRESS         Override the address advertised in the QR code
 --http               Plain HTTP; disables motion sensors on iOS
 --pointer-only       Keep IR input but send a stable, level IMU
@@ -76,10 +97,42 @@ Useful options:
 
 Run `uv run python server.py --help` for the complete list.
 
+## Systems, controller modes, and backends
+
+These are separate concepts:
+
+- A **system** is what the players are emulating, such as `nes` or `wii`.
+- A **controller mode** defines the phone layout and semantic control mapping.
+- A **backend** delivers canonical pad state to an emulator. Dolphin uses DSU;
+  RetroArch uses Linux uinput/evdev.
+
+The registry in `systems.py` is the source of truth. A system is offered in the
+interactive chooser only after its controller mode, backend mapping, tests, and
+documentation are implemented. Supplying a registered roadmap system currently
+produces an explicit unsupported error instead of silently showing the wrong
+controller.
+
+| System argument | Status | Controller mode | Default backend |
+|---|---|---|---|
+| `nes` | Experimental | Full-screen landscape NES controller | RetroArch/uinput |
+| `wii` | Experimental | Portrait Wii Remote with pointer and motion | Dolphin/DSU |
+
+Registered roadmap systems:
+
+```text
+amiga amstradcpc arcade atari2600 atari5200 atari7800 atarilynx bbcmicro c64
+coleco cps daphne doom dosbox fba fds gamegear gb gba gbc gw intelli
+mastersystem megadrive msx neogeo ngp pcecd pcengine pico8 pokemini psx quake
+scummvm sega32x segacd sg-1000 snes supervision test tic80 vb wsc zx
+```
+
+Some of these will share physical controller families, but they remain separate
+system entries so core-specific devices and remaps can be added later.
+
 ## Portable access point
 
 ```sh
-uv run python server.py --ap
+uv run python server.py --system wii --ap
 ```
 
 Defaults:
@@ -120,15 +173,43 @@ the suffix `.partypad-bak`. Dolphin must remain closed while the files change.
 | HOME | PS | Home |
 | D-pad | Pad N/S/W/E | D-pad |
 
+## RetroArch proof of concept
+
+RetroArch support currently targets Linux's `udev` controller driver. PartyPad
+creates four virtual controllers at startup so player ordering remains stable as
+phones join and leave. First install the user-local autoconfiguration profile:
+
+```sh
+uv run python setup_retroarch.py
+```
+
+Revert it at any time with `uv run python setup_retroarch.py --revert`. Then
+start PartyPad before RetroArch:
+
+```sh
+uv run python server.py --system nes
+```
+
+The default RetroArch profile is a landscape NES controller. It maps the visible
+NES A and B buttons to RetroPad A (east) and B (south), matching Mesen's default
+Standard Controller device. In RetroArch, use the `udev` controller driver and confirm that
+`PartyPad Virtual Controller` is assigned to ports 1–4. The Mesen core's standard
+NES joypad is the initial test target.
+
+For a non-default uinput device permission setup, grant only the user running
+PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
+
 ## Limitations
 
-- **Dolphin only:** DSU/cemuhook is the sole controller backend today.
-  RetroArch support is a roadmap item and will likely require a separate virtual
-  gamepad/uinput backend rather than DSU configuration.
+- **Experimental RetroArch support:** the uinput backend currently covers a
+  standard digital/analog RetroPad and an NES phone layout. Mouse, lightgun,
+  paddle, keyboard, rumble, motion, and system-specific layouts are not yet
+  implemented. RetroArch support is Linux-only.
 - **Experimental motion:** the current mapping was tuned on iOS. Android Chrome,
   including Pixel devices, may report gravity axes with different signs; Android
   steering is known to be incorrect and awaits device-side logging and testing.
-- **Portrait layout:** the controller and motion frame assume a portrait phone.
+- **Wii portrait layout:** the Wii controller and motion frame assume a portrait
+  phone. The NES controller is designed for landscape use.
 - **Self-signed HTTPS:** browser warnings are expected. PartyPad does not install
   a certificate authority or transmit certificates off the host.
 - **AP hardware constraints:** some adapters cannot run client and AP modes at
@@ -144,9 +225,8 @@ the suffix `.partypad-bak`. Dolphin must remain closed while the files change.
 1. Normalize and test motion across iOS and Android devices.
 2. Add automated integration tests for AP startup and cleanup in a network
    namespace.
-3. Generalize controller layouts and mappings.
-4. Add a RetroArch-compatible backend, likely through Linux uinput or another
-   broadly supported virtual-controller interface.
+3. Implement shared controller families and add SNES, Genesis, PlayStation, and arcade layouts.
+4. Add RetroArch mouse, lightgun, paddle, keyboard, rumble, and motion device support.
 5. Package releases and improve support beyond Arch Linux/NetworkManager.
 
 ## Development
@@ -154,7 +234,7 @@ the suffix `.partypad-bak`. Dolphin must remain closed while the files change.
 ```sh
 uv sync
 uv run python -m unittest discover -s tests -v
-uv run python -m py_compile server.py hotspot.py ap_helper.py setup_dolphin.py
+uv run python -m py_compile server.py systems.py uinput_backend.py hotspot.py ap_helper.py setup_dolphin.py setup_retroarch.py
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance and

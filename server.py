@@ -1,14 +1,12 @@
-"""
-partypad — turn phones into Dolphin controllers over WiFi.
+"""PartyPad system selection, web controllers, and emulator backends.
 
-Architecture (step 1: buttons + sticks, plain HTTP):
+    phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
+                                     |
+                                     +--uinput/evdev--> RetroArch
 
-    phone browser  --WebSocket-->  this server  --DSU/UDP 127.0.0.1:26760-->  Dolphin
-
-The key idea: the DSU/cemuhook server runs HERE (on localhost), exposing 4 fixed
-slots. Dolphin connects to 127.0.0.1:26760 with a static config, so there is no
-per-phone IP entry ever again. Phones just feed their input over a WebSocket and
-get assigned a slot (player 1-4).
+Systems select a controller mode and a default emulator backend through the
+registry in systems.py. Phones feed canonical pad state over a WebSocket and
+are assigned one of four stable player slots.
 
 The DSU wire format below matches the reference implementation in
 joaorb64/joycond-cemuhook (a well-used DSU server), verified against the
@@ -31,6 +29,8 @@ from aiohttp import web, WSMsgType
 import qrcode
 
 from hotspot import AP_IP, AccessPoint
+from systems import SUPPORTED_SYSTEMS, SYSTEMS, get_system
+from uinput_backend import UInputBackend
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
@@ -399,7 +399,15 @@ async def ws_handler(request):
         return ws
 
     hub.ws_by_slot[slot] = ws
-    await ws.send_json({"t": "welcome", "slot": slot, "player": slot + 1})
+    await ws.send_json(
+        {
+            "t": "welcome",
+            "slot": slot,
+            "player": slot + 1,
+            "system": request.app["system"].id,
+            "controller_mode": request.app["system"].controller_mode,
+        }
+    )
     print(f"[ws] player {slot + 1} connected from {request.remote}")
 
     try:
@@ -418,6 +426,9 @@ async def ws_handler(request):
                 break
     finally:
         hub.release_slot(slot)
+        uinput = request.app.get("uinput")
+        if uinput is not None:
+            uinput.neutralize(slot)
         print(f"[ws] player {slot + 1} disconnected")
     return ws
 
@@ -426,22 +437,48 @@ async def index_handler(request):
     return web.FileResponse(STATIC / "index.html")
 
 
+async def config_handler(request):
+    system = request.app["system"]
+    return web.json_response(
+        {
+            "system": system.id,
+            "system_name": system.label,
+            "controller_mode": system.controller_mode,
+            "backend": request.app["backend"],
+        }
+    )
+
+
 async def start_background(app):
     loop = asyncio.get_running_loop()
     hub = app["hub"]
-    transport, protocol = await loop.create_datagram_endpoint(
-        lambda: DSUServer(hub.pads),
-        local_addr=("127.0.0.1", DSU_PORT),
-    )
-    app["dsu_transport"] = transport
-    app["dsu"] = protocol
-    print(f"[dsu] serving on 127.0.0.1:{DSU_PORT} (point Dolphin here)")
+    protocol = None
+    if app["backend"] in ("dolphin", "both"):
+        transport, protocol = await loop.create_datagram_endpoint(
+            lambda: DSUServer(hub.pads),
+            local_addr=("127.0.0.1", DSU_PORT),
+        )
+        app["dsu_transport"] = transport
+        app["dsu"] = protocol
+        print(f"[dsu] serving on 127.0.0.1:{DSU_PORT} (point Dolphin here)")
+
+    if app["backend"] in ("retroarch", "both"):
+        try:
+            app["uinput"] = UInputBackend(MAX_PADS)
+        except PermissionError as exc:
+            raise RuntimeError(
+                "cannot open /dev/uinput; grant this user uinput access (see README)"
+            ) from exc
+        print(f"[uinput] {MAX_PADS} stable PartyPad controllers ready for RetroArch")
 
     async def broadcaster():
         # 60 Hz output loop; reads latest pad state each tick.
         try:
             while True:
-                protocol.broadcast_tick()
+                if protocol is not None:
+                    protocol.broadcast_tick()
+                if app.get("uinput") is not None:
+                    app["uinput"].update(hub.pads)
                 await asyncio.sleep(1 / 60)
         except asyncio.CancelledError:
             pass
@@ -450,8 +487,14 @@ async def start_background(app):
 
 
 async def cleanup_background(app):
-    app["broadcaster"].cancel()
-    app["dsu_transport"].close()
+    broadcaster = app.get("broadcaster")
+    if broadcaster is not None:
+        broadcaster.cancel()
+        await asyncio.gather(broadcaster, return_exceptions=True)
+    if app.get("dsu_transport") is not None:
+        app["dsu_transport"].close()
+    if app.get("uinput") is not None:
+        app["uinput"].close()
     if app.get("log"):
         app["log"].close()
 
@@ -521,8 +564,26 @@ def ensure_cert(ip: str, regen: bool = False):
     return cert, key
 
 
-def main():
-    parser = argparse.ArgumentParser(description="partypad DSU bridge + web controller")
+def build_parser():
+    parser = argparse.ArgumentParser(description="partypad web controller bridge")
+    parser.add_argument(
+        "--system",
+        choices=tuple(SYSTEMS),
+        metavar="SYSTEM",
+        help="system being played; bypasses the interactive setup",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=("dolphin", "retroarch", "both"),
+        default=None,
+        help="override the system's emulator backend",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=("wii", "nes"),
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--host", default="0.0.0.0", help="web bind address")
     parser.add_argument("--port", type=int, default=8080, help="web port")
     parser.add_argument(
@@ -557,7 +618,59 @@ def main():
     parser.add_argument(
         "--ap-password", default="partypad", help="Wi-Fi password for --ap (default: partypad)"
     )
-    args = parser.parse_args()
+    return parser
+
+
+def choose_system(input_func=input, output=print):
+    """Prompt for one of the systems whose controller support is implemented."""
+    output("PartyPad setup — choose the system being played:")
+    for index, system in enumerate(SUPPORTED_SYSTEMS, 1):
+        output(f"  {index}. {system.label} [{system.id}] — {system.detail}")
+    while True:
+        try:
+            answer = input_func("System: ").strip().lower()
+        except EOFError as exc:
+            raise ValueError("no interactive input; pass --system nes or --system wii") from exc
+        for index, system in enumerate(SUPPORTED_SYSTEMS, 1):
+            if answer in (str(index), system.id):
+                return system
+        output("Enter a listed number or system name.")
+
+
+def resolve_system(args, input_func=input, output=print):
+    """Resolve new system selection and the old backend/profile shorthand."""
+    if args.system:
+        system = get_system(args.system)
+    elif args.profile:
+        system = get_system(args.profile)
+    elif args.backend in ("dolphin", "retroarch"):
+        system = get_system("wii" if args.backend == "dolphin" else "nes")
+    else:
+        system = choose_system(input_func, output)
+
+    if not system.supported:
+        raise ValueError(
+            f"system '{system.id}' is registered for future support but has no controller mode yet"
+        )
+    if args.profile and args.profile != system.controller_mode:
+        raise ValueError(
+            f"--profile {args.profile} conflicts with --system {system.id}; omit --profile"
+        )
+    backend = args.backend or system.backend
+    if backend != "both" and backend != system.backend:
+        raise ValueError(
+            f"system '{system.id}' requires the {system.backend} backend (or --backend both)"
+        )
+    return system, backend
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        system, backend = resolve_system(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.ap and not 8 <= len(args.ap_password) <= 63:
         parser.error("--ap-password must be 8 to 63 characters")
     if args.ap and (not 1 <= len(args.ap_name.encode("utf-8")) <= 32 or "\n" in args.ap_name):
@@ -569,6 +682,9 @@ def main():
 
     app = web.Application()
     app["hub"] = Hub()
+    app["backend"] = backend
+    app["system"] = system
+    app["uinput"] = None
     app["log"] = None
     if args.log:
         log_dir = HERE / "logs"
@@ -577,6 +693,7 @@ def main():
         app["log"] = open(log_path, "w", buffering=1)  # line-buffered
         print(f"[log] motion log: {log_path}")
     app.router.add_get("/", index_handler)
+    app.router.add_get("/config", config_handler)
     app.router.add_get("/ws", ws_handler)
     app.router.add_static("/static", STATIC)
     app.on_startup.append(start_background)
@@ -601,7 +718,7 @@ def main():
             access_point.start(url)
 
         print("\n" + "=" * 44)
-        print("  partypad — scan to grab a controller")
+        print(f"  partypad — {system.label} via {backend}")
         print("=" * 44)
         if args.ap:
             print("  1. Join PartyPad Wi-Fi")
