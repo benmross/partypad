@@ -3,6 +3,15 @@
 const state = { b: {}, left_x: 0, left_y: 0, px: 0, py: 0, m: null };
 let dirty = true;
 let ws = null;
+let rtc = null;
+let inputChannel = null;
+let inputSequence = 0;
+let lastInputSent = 0;
+let playerNumber = 0;
+let joined = false;
+let hostedLanding = false;
+let reconnectDelay = 500;
+let reconnectTimer = null;
 let debugOn = false;
 const G = 9.80665;
 const D2R = Math.PI / 180;
@@ -14,6 +23,8 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const IS_ANDROID = /Android/i.test(navigator.userAgent);
 const ACCEL_POLARITY = IS_ANDROID ? -1 : 1;
 const CLIENT_ID_KEY = "partypad-controller-id";
+const onlineMatch = location.hash.match(/^#\/join\/([A-Za-z0-9_-]{16,32})\/([A-Za-z0-9_-]{20,128})$/);
+const onlineSession = onlineMatch ? { id: onlineMatch[1], secret: onlineMatch[2] } : null;
 
 function controllerId() {
   const makeId = () => crypto.randomUUID
@@ -37,23 +48,119 @@ function controllerId() {
 }
 
 function connect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws?client=${encodeURIComponent(controllerId())}`);
-  ws.onopen = () => setStatus("connected");
-  ws.onclose = () => { setStatus("disconnected — tap Join"); showJoin(); };
+  const endpoint = onlineSession
+    ? `${proto}://${location.host}/api/sessions/${onlineSession.id}/ws`
+    : `${proto}://${location.host}/ws?client=${encodeURIComponent(controllerId())}`;
+  ws = new WebSocket(endpoint);
+  ws.onopen = () => { reconnectDelay = 500; setStatus("connected"); };
+  ws.onclose = (event) => {
+    inputChannel = null;
+    if (rtc) rtc.close();
+    rtc = null;
+    const terminal = event.reason.includes("expired") || event.reason.includes("authentication") ||
+      event.reason.includes("full");
+    if (terminal) {
+      joined = false;
+      showJoin();
+      setStatus(event.reason || "session unavailable");
+    } else if (onlineSession && joined) {
+      setStatus("reconnecting…");
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    } else {
+      setStatus("disconnected — tap Join");
+      showJoin();
+    }
+  };
   ws.onerror = () => setStatus("connection error");
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
-    if (m.t === "welcome") {
-      applyControllerMode(m.controller_mode || "wii", m.system);
-      document.getElementById("player").textContent = m.player;
-      setStatus("Player " + m.player);
-    } else if (m.t === "full") {
-      setStatus("all 4 controllers in use");
+    if (m.t === "hello" && onlineSession) {
+      ws.send(JSON.stringify({ t: "auth", role: "controller", secret: onlineSession.secret,
+                               client: controllerId() }));
+    } else if (m.t === "auth_ok" && onlineSession) {
+      const config = m.config || {};
+      applyControllerMode(config.controller_mode || "wii", config.system);
+      startWebRtc(m.ice_servers || []);
+      setStatus("connected · relay");
+    } else if (m.t === "control") {
+      handleControl(m.message || {});
+    } else if (m.t === "answer" && rtc) {
+      rtc.setRemoteDescription({ type: "answer", sdp: m.sdp }).catch(() => {
+        setStatus("connected · relay");
+      });
+    } else {
+      handleControl(m);
     }
   };
 }
+
+function handleControl(m) {
+  if (m.t === "welcome") {
+      applyControllerMode(m.controller_mode || "wii", m.system);
+      playerNumber = m.player;
+      document.getElementById("player").textContent = m.player;
+      setStatus("Player " + m.player + (onlineSession ? " · relay" : ""));
+    } else if (m.t === "full") {
+      joined = false;
+      setStatus("all 4 controllers in use");
+    } else if (m.t === "transport" && m.path) {
+      setStatus(`Player ${playerNumber || "?"} · ${m.path}`);
+    }
+}
 function setStatus(s) { document.getElementById("status").textContent = s; }
+
+async function selectedPath(pc) {
+  try {
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach((item) => {
+      if (item.type === "candidate-pair" && item.state === "succeeded" &&
+          (item.selected || item.nominated)) pair = item;
+    });
+    if (!pair) return "WebRTC";
+    const local = stats.get(pair.localCandidateId);
+    const remote = stats.get(pair.remoteCandidateId);
+    const relayed = local?.candidateType === "relay" || remote?.candidateType === "relay";
+    const protocol = (local?.protocol || remote?.protocol || "").toUpperCase();
+    const rtt = pair.currentRoundTripTime == null ? "" : ` · ${Math.round(pair.currentRoundTripTime * 1000)} ms`;
+    return `${relayed ? "TURN" : "direct"}${protocol ? "/" + protocol : ""}${rtt}`;
+  } catch {
+    return "WebRTC";
+  }
+}
+
+async function startWebRtc(iceServers) {
+  if (!onlineSession || !window.RTCPeerConnection || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (rtc) rtc.close();
+  rtc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 1 });
+  inputChannel = rtc.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
+  rtc.onicecandidate = ({ candidate }) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ t: "candidate", candidate: candidate ? candidate.toJSON() : null }));
+    }
+  };
+  inputChannel.onopen = async () => {
+    const path = await selectedPath(rtc);
+    setStatus(`Player ${playerNumber || "?"} · ${path}`);
+  };
+  inputChannel.onclose = () => setStatus(`Player ${playerNumber || "?"} · relay`);
+  rtc.onconnectionstatechange = () => {
+    if (["failed", "disconnected", "closed"].includes(rtc.connectionState)) {
+      setStatus(`Player ${playerNumber || "?"} · relay`);
+    }
+  };
+  try {
+    await rtc.setLocalDescription(await rtc.createOffer());
+    // Send the offer immediately. ICE candidates continue over signaling as
+    // they are discovered, avoiding tens of seconds of blocking on cellular.
+    ws.send(JSON.stringify({ t: "offer", sdp: rtc.localDescription.sdp }));
+  } catch {
+    setStatus(`Player ${playerNumber || "?"} · relay`);
+  }
+}
 
 function applyControllerMode(mode, system) {
   document.body.dataset.system = system || mode;
@@ -75,15 +182,27 @@ function applyControllerMode(mode, system) {
   }
 }
 
-fetch("/config")
-  .then((response) => response.json())
-  .then((config) => applyControllerMode(config.controller_mode || "wii", config.system))
-  .catch(() => applyControllerMode("wii", "wii"));
+if (!onlineSession) {
+  fetch("/config")
+    .then((response) => response.json())
+    .then((config) => {
+      if (config.online_service) {
+        hostedLanding = true;
+        document.querySelector(".join-card .sub").textContent = "No active controller session";
+        document.querySelector(".hint").textContent = "Start PartyPad on the computer, then scan its QR code.";
+        document.getElementById("join-btn").disabled = true;
+      } else {
+        applyControllerMode(config.controller_mode || "wii", config.system);
+      }
+    })
+    .catch(() => applyControllerMode("wii", "wii"));
+}
 
 let pendingRc = false;
 const r2 = (n) => Math.round(n * 100) / 100;
-function pump() {
-  if (dirty && ws && ws.readyState === WebSocket.OPEN) {
+function pump(timestamp) {
+  const heartbeat = onlineSession && timestamp - lastInputSent >= 50;
+  if ((dirty || heartbeat) && ws && ws.readyState === WebSocket.OPEN) {
     const msg = { t: "i", b: state.b, left_x: state.left_x, left_y: state.left_y,
                   px: pointer.px, py: pointer.py };
     if (state.m) msg.m = state.m;
@@ -91,7 +210,21 @@ function pump() {
     msg.o = [r2(motion.oa), r2(motion.ob), r2(motion.og)];
     msg.aim = [r2(pointer.az / D2R), r2(pointer.el / D2R)];
     if (pendingRc) { msg.rc = 1; pendingRc = false; }
-    ws.send(JSON.stringify(msg));
+    if (onlineSession) {
+      const envelope = { seq: ++inputSequence, data: msg };
+      if (inputChannel && inputChannel.readyState === "open" && inputChannel.bufferedAmount < 65536) {
+        try {
+          inputChannel.send(JSON.stringify(envelope));
+        } catch {
+          if (ws.bufferedAmount < 65536) ws.send(JSON.stringify({ t: "input", ...envelope }));
+        }
+      } else if (ws.bufferedAmount < 65536) {
+        ws.send(JSON.stringify({ t: "input", ...envelope }));
+      }
+    } else if (ws.bufferedAmount < 65536) {
+      ws.send(JSON.stringify(msg));
+    }
+    lastInputSent = timestamp;
     dirty = false;
   }
   if (debugOn) drawDebug();
@@ -290,6 +423,8 @@ function drawDebug() {
 
 // ---- join / lifecycle ----
 async function join() {
+  if (hostedLanding) return;
+  joined = true;
   document.getElementById("join").classList.add("hidden");
   document.getElementById("pad").classList.remove("hidden");
   const ok = await enableMotion();     // request sensors first, inside the tap gesture
@@ -298,6 +433,12 @@ async function join() {
   if (!ok) setTimeout(() => setStatus("motion off (buttons only)"), 800);
 }
 function showJoin() {
+  joined = false;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (inputChannel) inputChannel.close();
+  if (rtc) rtc.close();
+  inputChannel = null;
+  rtc = null;
   document.getElementById("join").classList.remove("hidden");
   document.getElementById("pad").classList.add("hidden");
 }

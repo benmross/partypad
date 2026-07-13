@@ -24,6 +24,11 @@ dependencies = [
 Homepage = "https://github.com/benmross/partypad"
 Issues = "https://github.com/benmross/partypad/issues"
 
+[project.optional-dependencies]
+online = [
+    "aiortc>=1.14,<2",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

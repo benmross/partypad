@@ -9,9 +9,9 @@ slots—no phone app or per-player IP configuration required.
 > and the portable access-point mode still need broader testing.
 
 ```text
-phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
-                                |
-                                +--uinput/evdev--> RetroArch
+phone browser --WebRTC/relay--> PartyPad --DSU/UDP--> Dolphin
+                                  |
+                                  +--uinput/evdev--> RetroArch
 ```
 
 ## Current goals
@@ -19,7 +19,8 @@ phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
 - Make local multiplayer easy: join from a phone in seconds.
 - Provide a faithful Wii Remote-style touch layout with motion and IR input.
 - Work without venue Wi-Fi by safely creating a temporary Linux access point.
-- Keep setup local, transparent, reversible, and free of hosted services.
+- Preserve a fully local mode while allowing controllers to join securely from
+  unrelated Wi-Fi networks or cellular data.
 - Grow RetroArch support from an NES proof of concept to authentic system layouts.
 
 ## What works today
@@ -35,6 +36,8 @@ phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
 - Internet sharing through the AP when the host has an active default route.
 - Offline captive landing page when no upstream connection exists.
 - AP, DHCP/DNS, forwarding, and firewall cleanup on normal exit or server crash.
+- Optional online sessions with trusted HTTPS, direct WebRTC when available,
+  managed TURN on restrictive networks, and a WebSocket reliability fallback.
 
 ## Requirements
 
@@ -42,7 +45,8 @@ phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
 - [`uv`](https://docs.astral.sh/uv/) for the documented workflow.
 - Dolphin and/or RetroArch, depending on the selected backend.
 - Access to `/dev/uinput` for RetroArch (commonly provided by the `input` group).
-- A phone with a modern browser on the same network.
+- A phone with a modern browser. Local mode requires the same network; online
+  mode works across unrelated networks and cellular data.
 
 Access-point mode additionally requires:
 
@@ -83,14 +87,49 @@ uv run python server.py --system wii
 Scan the URL QR code from each phone. The HTTPS certificate is self-signed, so
 each phone must accept the browser warning once before joining.
 
+### Online sessions
+
+Online mode is the recommended option on eduroam, guest Wi-Fi, cellular data,
+or any network that isolates devices:
+
+```sh
+uv sync --extra online
+uv run python server.py --system wii --online
+```
+
+`setup_online.py` is a one-time service-operator step that provisions the
+private host credential; it is not needed for each session. A new installation
+must either receive an authorized host token from its service operator or
+deploy its own service from [`cloudflare/`](cloudflare/).
+
+The QR points to `https://partypad.benmross.com`. Phones do not need to share a
+network with the computer. Both sides make outbound connections; WebRTC ICE
+selects a direct route when one works and otherwise uses Cloudflare Realtime
+TURN. Input begins over the signaling relay while WebRTC negotiates and falls
+back to that relay if real-time transports are blocked entirely.
+
+The browser sends its offer immediately and trickles ICE candidates as they are
+discovered, so slow cellular candidates do not block controller input or
+negotiation. The Python aiortc endpoint gathers its answer candidates as a
+batch, which can take several seconds on a computer with multiple physical or
+virtual network interfaces. The phone status reports `direct/UDP`, `TURN/UDP`,
+TCP/TLS TURN, or `relay` for the selected path.
+
+Each session uses independent random host and join
+secrets. The join secret is carried in the URL fragment, which is not sent in
+HTTP requests or referrer headers. Normal shutdown revokes the session
+immediately; abandoned sessions expire after eight hours.
+
 Useful options:
 
 ```text
---port 8080          Web server port
+--port PORT          Local web port (8080 by default; ephemeral in online mode)
 --system SYSTEM      Select the system and bypass interactive setup
 --backend BACKEND    Advanced override: dolphin, retroarch, or both
 --ip ADDRESS         Override the address advertised in the QR code
 --http               Plain HTTP; disables motion sensors on most mobile browsers
+--online             Accept controllers from any network through the hosted service
+--service-url URL    Override the hosted session service
 --pointer-only       Keep IR input but send a stable, level IMU
 --gyro               Forward gyroscope data for MotionPlus testing
 --log                Write motion diagnostics under logs/
@@ -220,14 +259,22 @@ PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
 - **Wii orientation:** the touch layout is portrait-oriented, while verified
   Mario Kart steering uses the phone sideways with autorotation locked and its
   top edge pointing left. Other grip orientations are not yet normalized.
-- **Self-signed HTTPS:** browser warnings are expected. PartyPad does not install
-  a certificate authority or transmit certificates off the host.
+- **Local self-signed HTTPS:** browser warnings are expected in local and AP
+  modes. Online sessions use a publicly trusted certificate and do not warn.
 - **AP hardware constraints:** some adapters cannot run client and AP modes at
   once, and concurrent modes may be restricted to one radio channel.
 - **Linux-specific AP mode:** the normal server is portable Python, but the AP
   helper depends on Linux networking tools and Polkit.
-- **No authentication on the controller page:** anyone who can reach the server
-  can claim one of four slots. Use only on trusted local networks.
+- **Unauthenticated local mode:** anyone who can reach the local server can claim
+  one of four slots. Online sessions require a high-entropy per-session join
+  secret, but anyone given that QR can join until the session ends.
+- **Hosted-service dependency:** online mode depends on the configured
+  Cloudflare Worker and Realtime TURN service. Local and AP modes remain fully
+  self-contained and continue to work if that service is unavailable.
+- **WebRTC setup time:** controller input starts over the WebSocket relay
+  immediately, but aiortc can take several seconds to finish its ICE answer on
+  hosts with multiple network interfaces before direct or TURN transport takes
+  over.
 - **No system service or packaged release yet:** run it from the checkout.
 
 ## Roadmap
@@ -244,8 +291,11 @@ PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
 
 ```sh
 uv sync
+uv sync --extra online
 uv run python -m unittest discover -s tests -v
-uv run python -m py_compile server.py systems.py uinput_backend.py hotspot.py ap_helper.py setup_dolphin.py setup_retroarch.py
+uv run python -m py_compile server.py online_transport.py systems.py uinput_backend.py hotspot.py ap_helper.py setup_dolphin.py setup_online.py setup_retroarch.py
+node --check static/app.js
+cd cloudflare && nvm install && npm ci && npm run check
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance and

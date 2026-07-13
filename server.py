@@ -16,6 +16,8 @@ cemuhook protocol spec (https://v1993.github.io/cemuhook-protocol/).
 import argparse
 import asyncio
 import json
+import math
+import os
 import re
 import socket
 import ssl
@@ -30,6 +32,7 @@ from aiohttp import web, WSMsgType
 import qrcode
 
 from hotspot import AP_IP, AccessPoint
+from online_transport import OnlineHost, create_session, load_host_token
 from systems import SUPPORTED_SYSTEMS, SYSTEMS, get_system
 from uinput_backend import UInputBackend
 
@@ -99,6 +102,15 @@ BUTTON_NAMES = (
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
+
+
+def finite_float(value):
+    """Return a finite float, or None for malformed/untrusted controller input."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return value if math.isfinite(value) else None
 
 
 def write_log(logf, slot: int, d: dict):
@@ -173,12 +185,18 @@ class PadState:
                     self.buttons[name] = bool(b[name])
         for attr in ("left_x", "left_y"):
             if attr in d:
-                setattr(self, attr, clamp(float(d[attr]), -1.0, 1.0))
+                value = finite_float(d[attr])
+                if value is not None:
+                    setattr(self, attr, clamp(value, -1.0, 1.0))
         # IR pointer, already computed on the phone (quaternion ray -> px/py in -1..1)
         if "px" in d:
-            self.right_x = clamp(float(d["px"]), -1.0, 1.0)
+            value = finite_float(d["px"])
+            if value is not None:
+                self.right_x = clamp(value, -1.0, 1.0)
         if "py" in d:
-            self.right_y = clamp(float(d["py"]), -1.0, 1.0)
+            value = finite_float(d["py"])
+            if value is not None:
+                self.right_y = clamp(value, -1.0, 1.0)
         if d.get("rc"):
             self.touch_until = time.monotonic() + 0.12
 
@@ -194,8 +212,12 @@ class PadState:
             self.gyro = (0.0, 0.0, 0.0)
             return
         # Accelerometer (g) and rotation rate (deg/s), in the phone's frame.
-        ax, ay, az = m.get("ax", 0.0), m.get("ay", 0.0), m.get("az", 0.0)
-        ra, rb, rg = m.get("ra", 0.0), m.get("rb", 0.0), m.get("rg", 0.0)  # alpha/beta/gamma rate
+        ax = finite_float(m.get("ax", 0.0)) or 0.0
+        ay = finite_float(m.get("ay", 0.0)) or 0.0
+        az = finite_float(m.get("az", 0.0)) or 0.0
+        ra = finite_float(m.get("ra", 0.0)) or 0.0
+        rb = finite_float(m.get("rb", 0.0)) or 0.0
+        rg = finite_float(m.get("rg", 0.0)) or 0.0  # alpha/beta/gamma rate
         # phone frame -> DSU frame (see mapping notes at top of file)
         self.accel = (SGN_ACCEL_X * ax, SGN_ACCEL_Y * az, SGN_ACCEL_Z * ay)
         if CONFIG["gyro"]:
@@ -376,7 +398,7 @@ class DSUServer(asyncio.DatagramProtocol):
 class Hub:
     def __init__(self):
         self.pads = [PadState(i) for i in range(MAX_PADS)]
-        self.ws_by_slot = {}  # slot -> WebSocketResponse
+        self.connection_by_slot = {}  # slot -> transport-specific connection token
         self.client_by_slot = {}  # slot -> durable browser controller id
         self.reservations = {}  # controller id -> (slot, monotonic expiry)
 
@@ -400,14 +422,10 @@ class Hub:
                 del self.reservations[client_id]
 
         reserved_slots = {
-            slot
-            for reserved_id, (slot, expiry) in list(self.reservations.items())
-            if expiry > now
+            slot for reserved_id, (slot, expiry) in list(self.reservations.items()) if expiry > now
         }
         self.reservations = {
-            reserved_id: value
-            for reserved_id, value in self.reservations.items()
-            if value[1] > now
+            reserved_id: value for reserved_id, value in self.reservations.items() if value[1] > now
         }
         for i, pad in enumerate(self.pads):
             if not pad.connected and i not in reserved_slots:
@@ -417,15 +435,15 @@ class Hub:
                 return i
         return None
 
-    def release_slot(self, slot, client_id, ws, now=None):
+    def release_slot(self, slot, client_id, connection, now=None):
         # A page reload can establish its replacement socket before the old
         # handler exits. Only the current socket is allowed to release the slot.
-        if self.ws_by_slot.get(slot) is not ws:
+        if self.connection_by_slot.get(slot) is not connection:
             return False
         now = time.monotonic() if now is None else now
         self.pads[slot].connected = False
         self.pads[slot].reset()
-        self.ws_by_slot.pop(slot, None)
+        self.connection_by_slot.pop(slot, None)
         self.client_by_slot.pop(slot, None)
         self.reservations[client_id] = (slot, now + SLOT_RECONNECT_GRACE)
         return True
@@ -448,8 +466,8 @@ async def ws_handler(request):
         await ws.close()
         return ws
 
-    previous_ws = hub.ws_by_slot.get(slot)
-    hub.ws_by_slot[slot] = ws
+    previous_ws = hub.connection_by_slot.get(slot)
+    hub.connection_by_slot[slot] = ws
     if previous_ws is not None and previous_ws is not ws:
         await previous_ws.close()
     await ws.send_json(
@@ -537,9 +555,18 @@ async def start_background(app):
             pass
 
     app["broadcaster"] = loop.create_task(broadcaster())
+    if app.get("online_session") is not None:
+        app["online_host"] = OnlineHost(app, app["online_session"])
+        app["online_task"] = loop.create_task(app["online_host"].run())
 
 
 async def cleanup_background(app):
+    if app.get("online_host") is not None:
+        await app["online_host"].close()
+    online_task = app.get("online_task")
+    if online_task is not None:
+        online_task.cancel()
+        await asyncio.gather(online_task, return_exceptions=True)
     broadcaster = app.get("broadcaster")
     if broadcaster is not None:
         broadcaster.cancel()
@@ -637,8 +664,13 @@ def build_parser():
         default=None,
         help=argparse.SUPPRESS,
     )
-    parser.add_argument("--host", default="0.0.0.0", help="web bind address")
-    parser.add_argument("--port", type=int, default=8080, help="web port")
+    parser.add_argument("--host", default=None, help="web bind address")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="local web port (default: 8080; online mode uses an ephemeral loopback port)",
+    )
     parser.add_argument(
         "--ip", default=None, help="LAN IP to advertise in the QR (default: auto-detect)"
     )
@@ -648,6 +680,16 @@ def build_parser():
         help="serve plain HTTP (no motion sensors on most mobile browsers)",
     )
     parser.add_argument("--regen-cert", action="store_true", help="force a new TLS cert")
+    parser.add_argument(
+        "--online",
+        action="store_true",
+        help="accept controllers through the public PartyPad service from any network",
+    )
+    parser.add_argument(
+        "--service-url",
+        default=os.environ.get("PARTYPAD_SERVICE_URL", "https://partypad.benmross.com"),
+        help="online session service (default: https://partypad.benmross.com)",
+    )
     parser.add_argument(
         "--log", action="store_true", help="write a diagnostic motion log to logs/*.jsonl"
     )
@@ -732,8 +774,11 @@ def main(argv=None):
         parser.error("--ap-name must be 1 to 32 UTF-8 bytes without newlines")
     if args.ap and ("\n" in args.ap_password or not args.ap_password.isascii()):
         parser.error("--ap-password must contain ASCII characters without newlines")
+    if args.ap and args.online:
+        parser.error("--ap and --online are separate connection modes; choose one")
     CONFIG["pointer_only"] = args.pointer_only
     CONFIG["gyro"] = args.gyro
+    port = args.port if args.port is not None else (0 if args.online else 8080)
 
     app = web.Application()
     app["hub"] = Hub()
@@ -741,6 +786,7 @@ def main(argv=None):
     app["system"] = system
     app["uinput"] = None
     app["log"] = None
+    app["online_session"] = None
     if args.log:
         log_dir = HERE / "logs"
         log_dir.mkdir(exist_ok=True)
@@ -758,15 +804,35 @@ def main(argv=None):
     if args.ap:
         access_point = AccessPoint(args.ap_interface, args.ap_name, args.ap_password)
 
-    lan_ip = args.ip or (AP_IP if args.ap else get_lan_ip())
+    lan_ip = args.ip or ("127.0.0.1" if args.online else AP_IP if args.ap else get_lan_ip())
+
+    if args.online:
+        host_token = load_host_token()
+        if not host_token:
+            parser.error("--online requires PARTYPAD_HOST_TOKEN or `python setup_online.py`")
+        try:
+            app["online_session"] = create_session(
+                args.service_url,
+                host_token,
+                system=system.id,
+                system_name=system.label,
+                controller_mode=system.controller_mode,
+                backend=backend,
+            )
+        except RuntimeError as exc:
+            parser.error(str(exc))
 
     ssl_context = None
-    if not args.http:
+    if not args.http and not args.online:
         cert, key = ensure_cert(lan_ip, regen=args.regen_cert)
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_context.load_cert_chain(cert, key)
-    scheme = "http" if args.http else "https"
-    url = f"{scheme}://{lan_ip}:{args.port}/"
+    scheme = "http" if args.http or args.online else "https"
+    url = (
+        app["online_session"]["join_url"]
+        if app["online_session"] is not None
+        else f"{scheme}://{lan_ip}:{port}/"
+    )
 
     try:
         if access_point is not None:
@@ -788,11 +854,14 @@ def main(argv=None):
         qr.make()
         qr.print_ascii(invert=True)
         print(f"  {url}")
-        if not args.http:
+        if args.online:
+            print("  (online session: phones may use Wi-Fi or cellular data)")
+        elif not args.http:
             print("  (tap through the one-time certificate warning on each phone)")
         print()
 
-        web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context, print=None)
+        bind_host = args.host or ("127.0.0.1" if args.online else "0.0.0.0")
+        web.run_app(app, host=bind_host, port=port, ssl_context=ssl_context, print=None)
     finally:
         if access_point is not None:
             access_point.stop()

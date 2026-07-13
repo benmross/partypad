@@ -5,8 +5,10 @@ from unittest.mock import Mock, patch
 
 import ap_helper
 import hotspot
+import online_transport
 import server
 import setup_dolphin
+import setup_online
 import setup_retroarch
 import systems
 import uinput_backend
@@ -25,6 +27,19 @@ class DSUProtocolTests(unittest.TestCase):
         self.assertEqual((pad.left_x, pad.left_y), (1.0, -1.0))
         self.assertEqual((pad.right_x, pad.right_y), (1.0, -1.0))
 
+    def test_malformed_or_nonfinite_input_is_ignored(self):
+        pad = server.PadState(0)
+        pad.update_from_json(
+            {
+                "left_x": "not-a-number",
+                "left_y": float("nan"),
+                "px": float("inf"),
+                "m": {"ax": "bad", "ay": None, "az": float("-inf")},
+            }
+        )
+        self.assertEqual((pad.left_x, pad.left_y, pad.right_x), (0.0, 0.0, 0.0))
+        self.assertEqual(pad.accel, (0.0, 0.0, -0.0))
+
 
 class PlayerSlotTests(unittest.TestCase):
     def test_disconnected_slot_is_reserved_for_same_browser(self):
@@ -32,7 +47,7 @@ class PlayerSlotTests(unittest.TestCase):
         sockets = [Mock() for _ in range(3)]
         for index, client_id in enumerate(("a" * 16, "b" * 16, "c" * 16)):
             self.assertEqual(hub.claim_slot(client_id, now=0), index)
-            hub.ws_by_slot[index] = sockets[index]
+            hub.connection_by_slot[index] = sockets[index]
 
         self.assertTrue(hub.release_slot(1, "b" * 16, sockets[1], now=10))
         self.assertEqual(hub.claim_slot("b" * 16, now=20), 1)
@@ -41,7 +56,7 @@ class PlayerSlotTests(unittest.TestCase):
         hub = server.Hub()
         ws = Mock()
         self.assertEqual(hub.claim_slot("a" * 16, now=0), 0)
-        hub.ws_by_slot[0] = ws
+        hub.connection_by_slot[0] = ws
         hub.release_slot(0, "a" * 16, ws, now=10)
         self.assertEqual(hub.claim_slot("b" * 16, now=20), 1)
         self.assertEqual(hub.claim_slot("c" * 16, now=41), 0)
@@ -51,10 +66,10 @@ class PlayerSlotTests(unittest.TestCase):
         old_ws, new_ws = Mock(), Mock()
         client_id = "a" * 16
         slot = hub.claim_slot(client_id, now=0)
-        hub.ws_by_slot[slot] = old_ws
+        hub.connection_by_slot[slot] = old_ws
         hub.release_slot(slot, client_id, old_ws, now=1)
         self.assertEqual(hub.claim_slot(client_id, now=2), slot)
-        hub.ws_by_slot[slot] = new_ws
+        hub.connection_by_slot[slot] = new_ws
         self.assertFalse(hub.release_slot(slot, client_id, old_ws, now=3))
         self.assertTrue(hub.pads[slot].connected)
 
@@ -63,6 +78,67 @@ class PlayerSlotTests(unittest.TestCase):
         client_id = "a" * 16
         self.assertEqual(hub.claim_slot(client_id, now=0), 0)
         self.assertEqual(hub.claim_slot(client_id, now=1), 0)
+
+
+class OnlineTransportTests(unittest.TestCase):
+    def test_online_token_is_saved_with_private_permissions(self):
+        import stat
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config" / "partypad" / "host_token"
+            setup_online.save_token(path, "secret")
+            self.assertEqual(path.read_text(), "secret\n")
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+    def test_relay_input_drops_duplicates_and_stale_packets(self):
+        system = Mock(id="wii", controller_mode="wii")
+        app = {"hub": server.Hub(), "system": system, "log": None, "uinput": None}
+        host = online_transport.OnlineHost(app, {})
+        peer = online_transport.OnlinePeer("peer", "a" * 16, 0)
+        host.peers[peer.id] = peer
+
+        host._handle_input(peer.id, 2, {"t": "i", "b": {"cross": True}})
+        host._handle_input(peer.id, 1, {"t": "i", "b": {"cross": False}})
+        self.assertTrue(app["hub"].pads[0].buttons["cross"])
+        self.assertEqual(peer.last_sequence, 2)
+
+    def test_malformed_relay_input_does_not_break_later_input(self):
+        system = Mock(id="wii", controller_mode="wii")
+        app = {"hub": server.Hub(), "system": system, "log": None, "uinput": None}
+        host = online_transport.OnlineHost(app, {})
+        peer = online_transport.OnlinePeer("peer", "a" * 16, 0)
+        host.peers[peer.id] = peer
+
+        host._handle_input(peer.id, 1, {"t": "i", "left_x": object()})
+        host._handle_input(peer.id, 2, {"t": "i", "left_x": 0.5})
+        self.assertEqual(app["hub"].pads[0].left_x, 0.5)
+
+
+class OnlineCandidateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_candidate_is_queued_until_peer_connection_exists(self):
+        host = online_transport.OnlineHost({}, {})
+        peer = online_transport.OnlinePeer("peer", "a" * 16, 0)
+        host.peers[peer.id] = peer
+        candidate = {
+            "candidate": "candidate:1 1 UDP 1 192.0.2.1 1234 typ host",
+            "sdpMid": "0",
+            "sdpMLineIndex": 0,
+        }
+
+        await host._handle_candidate(peer.id, candidate)
+
+        self.assertEqual(peer.pending_candidates, [candidate])
+
+    async def test_malformed_candidate_is_not_queued(self):
+        host = online_transport.OnlineHost({}, {})
+        peer = online_transport.OnlinePeer("peer", "a" * 16, 0)
+        host.peers[peer.id] = peer
+
+        await host._handle_candidate(peer.id, "not-an-object")
+
+        self.assertEqual(peer.pending_candidates, [])
 
 
 class UInputBackendTests(unittest.TestCase):
@@ -123,19 +199,55 @@ class SystemSelectionTests(unittest.TestCase):
             server.resolve_system(args)
 
     def test_legacy_backend_still_selects_corresponding_system(self):
-        system, backend = server.resolve_system(
-            self.parser.parse_args(["--backend", "retroarch"])
-        )
+        system, backend = server.resolve_system(self.parser.parse_args(["--backend", "retroarch"]))
         self.assertEqual((system.id, backend), ("nes", "retroarch"))
 
     def test_every_requested_future_system_is_registered(self):
         requested = {
-            "amiga", "amstradcpc", "arcade", "atari2600", "atari5200", "atari7800",
-            "atarilynx", "bbcmicro", "c64", "coleco", "cps", "daphne", "doom",
-            "dosbox", "fba", "fds", "gamegear", "gb", "gba", "gbc", "gw", "intelli",
-            "mastersystem", "megadrive", "msx", "neogeo", "ngp", "pcecd", "pcengine",
-            "pico8", "pokemini", "psx", "quake", "scummvm", "sega32x", "segacd",
-            "sg-1000", "snes", "supervision", "test", "tic80", "vb", "wsc", "zx",
+            "amiga",
+            "amstradcpc",
+            "arcade",
+            "atari2600",
+            "atari5200",
+            "atari7800",
+            "atarilynx",
+            "bbcmicro",
+            "c64",
+            "coleco",
+            "cps",
+            "daphne",
+            "doom",
+            "dosbox",
+            "fba",
+            "fds",
+            "gamegear",
+            "gb",
+            "gba",
+            "gbc",
+            "gw",
+            "intelli",
+            "mastersystem",
+            "megadrive",
+            "msx",
+            "neogeo",
+            "ngp",
+            "pcecd",
+            "pcengine",
+            "pico8",
+            "pokemini",
+            "psx",
+            "quake",
+            "scummvm",
+            "sega32x",
+            "segacd",
+            "sg-1000",
+            "snes",
+            "supervision",
+            "test",
+            "tic80",
+            "vb",
+            "wsc",
+            "zx",
         }
         self.assertTrue(requested.issubset(systems.SYSTEMS))
 

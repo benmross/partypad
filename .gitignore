@@ -17,3 +17,9 @@ logs/*
 .vscode/
 *.swp
 *.swo
+
+# Cloudflare Worker development and local secrets
+cloudflare/node_modules/
+cloudflare/.wrangler/
+cloudflare/.dev.vars
+cloudflare/.env*
