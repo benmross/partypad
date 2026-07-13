@@ -97,10 +97,10 @@ function bindButtons() {
 // ---- D-pad: 8-way from touch position ----
 function bindDpad() {
   const dpad = document.getElementById("dpad");
+  const controls = document.querySelector(".controls");
   const arrows = { dpad_up: document.getElementById("arU"), dpad_down: document.getElementById("arD"),
                    dpad_left: document.getElementById("arL"), dpad_right: document.getElementById("arR") };
   let activeId = null;
-  const DEAD = 0.28;
   const apply = (up, down, left, right) => {
     setButton("dpad_up", up); setButton("dpad_down", down);
     setButton("dpad_left", left); setButton("dpad_right", right);
@@ -111,15 +111,13 @@ function bindDpad() {
     const r = dpad.getBoundingClientRect();
     const nx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
     const ny = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
-    if (document.body.classList.contains("profile-nes")) {
-      // The full left region is live. Use angular sectors with diagonal support,
-      // rather than leaving a dead area around the visual D-pad.
-      const ax = Math.abs(nx), ay = Math.abs(ny);
-      apply(ny < 0 && ay >= ax * 0.45, ny >= 0 && ay >= ax * 0.45,
-            nx < 0 && ax >= ay * 0.45, nx >= 0 && ax >= ay * 0.45);
-    } else {
-      apply(ny < -DEAD, ny > DEAD, nx < -DEAD, nx > DEAD);
-    }
+    // Every point in the D-pad region belongs to a directional sector. Adjacent
+    // sectors overlap near the diagonals, so the gaps around the visible cross
+    // remain useful hit area and diagonal input still works.
+    const ax = Math.abs(nx), ay = Math.abs(ny);
+    if (ax === 0 && ay === 0) return;
+    apply(ny < 0 && ay >= ax * 0.45, ny > 0 && ay >= ax * 0.45,
+          nx < 0 && ax >= ay * 0.45, nx > 0 && ax >= ay * 0.45);
   };
   const clear = () => {
     activeId = null;
@@ -141,6 +139,14 @@ function bindDpad() {
   dpad.addEventListener("pointerup", end);
   dpad.addEventListener("pointercancel", end);
   dpad.addEventListener("lostpointercapture", end);
+  controls.addEventListener("pointerdown", (e) => {
+    if (!document.body.classList.contains("profile-wii") || e.target.closest?.("button, #dpad")) return;
+    const r = dpad.getBoundingClientRect();
+    // Mobile browsers do not consistently include oversized generated content
+    // in hit testing. Delegate otherwise-unused touches in the D-pad's vertical
+    // band from the full-width controls container instead.
+    if (e.clientY >= r.top && e.clientY <= r.bottom) start(e);
+  });
   // Some mobile browsers can lose capture during fullscreen/orientation/UI
   // transitions. Window-level releases and lifecycle changes are fallbacks.
   window.addEventListener("pointerup", end, true);

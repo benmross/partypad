@@ -79,6 +79,12 @@ html, body {
 .btn.sys::after, .btn.home::after {
   content: ""; position: absolute; top: 0; bottom: 0; left: -2.4vmin; right: -2.4vmin;
 }
+/* On Wii, make the whole system-row band useful: Minus owns the space to the
+   left edge, Plus owns the space to the right edge, and all three hitboxes meet
+   halfway across the 6vmin gaps. */
+.profile-wii .btn.sys:first-child::after { left: -50vw; right: -3vmin; }
+.profile-wii .btn.home::after { left: -3vmin; right: -3vmin; }
+.profile-wii .btn.sys:last-child::after { left: -3vmin; right: -50vw; }
 .btn:active, .recenter:active { box-shadow: inset 3px 4px 9px var(--sd), inset -3px -4px 8px var(--sl); }
 .btn.pressed { background: var(--btn-press); box-shadow: inset 3px 4px 9px var(--sd), inset -2px -3px 7px var(--sl); }
 
