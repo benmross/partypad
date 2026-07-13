@@ -26,6 +26,45 @@ class DSUProtocolTests(unittest.TestCase):
         self.assertEqual((pad.right_x, pad.right_y), (1.0, -1.0))
 
 
+class PlayerSlotTests(unittest.TestCase):
+    def test_disconnected_slot_is_reserved_for_same_browser(self):
+        hub = server.Hub()
+        sockets = [Mock() for _ in range(3)]
+        for index, client_id in enumerate(("a" * 16, "b" * 16, "c" * 16)):
+            self.assertEqual(hub.claim_slot(client_id, now=0), index)
+            hub.ws_by_slot[index] = sockets[index]
+
+        self.assertTrue(hub.release_slot(1, "b" * 16, sockets[1], now=10))
+        self.assertEqual(hub.claim_slot("b" * 16, now=20), 1)
+
+    def test_new_browser_does_not_steal_slot_during_grace_period(self):
+        hub = server.Hub()
+        ws = Mock()
+        self.assertEqual(hub.claim_slot("a" * 16, now=0), 0)
+        hub.ws_by_slot[0] = ws
+        hub.release_slot(0, "a" * 16, ws, now=10)
+        self.assertEqual(hub.claim_slot("b" * 16, now=20), 1)
+        self.assertEqual(hub.claim_slot("c" * 16, now=41), 0)
+
+    def test_stale_socket_cannot_release_reclaimed_slot(self):
+        hub = server.Hub()
+        old_ws, new_ws = Mock(), Mock()
+        client_id = "a" * 16
+        slot = hub.claim_slot(client_id, now=0)
+        hub.ws_by_slot[slot] = old_ws
+        hub.release_slot(slot, client_id, old_ws, now=1)
+        self.assertEqual(hub.claim_slot(client_id, now=2), slot)
+        hub.ws_by_slot[slot] = new_ws
+        self.assertFalse(hub.release_slot(slot, client_id, old_ws, now=3))
+        self.assertTrue(hub.pads[slot].connected)
+
+    def test_same_browser_reclaims_slot_before_old_socket_exits(self):
+        hub = server.Hub()
+        client_id = "a" * 16
+        self.assertEqual(hub.claim_slot(client_id, now=0), 0)
+        self.assertEqual(hub.claim_slot(client_id, now=1), 0)
+
+
 class UInputBackendTests(unittest.TestCase):
     def test_axis_value_is_clamped_and_signed(self):
         self.assertEqual(uinput_backend.axis_value(-2), uinput_backend.AXIS_MIN)

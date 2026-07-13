@@ -25,6 +25,8 @@ phone browser --WebSocket--> PartyPad --DSU/UDP--> Dolphin
 ## What works today
 
 - Up to four browser controllers with fixed DSU/cemuhook slots.
+- A disconnected phone's player slot is held for 30 seconds and reclaimed when
+  that browser reconnects; a new phone cannot take the reserved slot meanwhile.
 - Wii Remote buttons, D-pad, accelerometer, optional gyroscope, and IR pointer.
 - Automatic Dolphin configuration with backups.
 - Experimental four-player Linux uinput backend and landscape NES layout for RetroArch.

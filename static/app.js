@@ -13,10 +13,32 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // not an axis remap; other browser/device combinations remain experimental.
 const IS_ANDROID = /Android/i.test(navigator.userAgent);
 const ACCEL_POLARITY = IS_ANDROID ? -1 : 1;
+const CLIENT_ID_KEY = "partypad-controller-id";
+
+function controllerId() {
+  const makeId = () => crypto.randomUUID
+    ? crypto.randomUUID().replaceAll("-", "")
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    let id = localStorage.getItem(CLIENT_ID_KEY);
+    if (!id) {
+      id = makeId();
+      localStorage.setItem(CLIENT_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    // Storage can be unavailable in private/restricted browser modes. The id
+    // still remains stable for reconnects during this page's lifetime.
+    if (!window.partypadControllerId) {
+      window.partypadControllerId = makeId();
+    }
+    return window.partypadControllerId;
+  }
+}
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = new WebSocket(`${proto}://${location.host}/ws?client=${encodeURIComponent(controllerId())}`);
   ws.onopen = () => setStatus("connected");
   ws.onclose = () => { setStatus("disconnected — tap Join"); showJoin(); };
   ws.onerror = () => setStatus("connection error");

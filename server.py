@@ -16,6 +16,7 @@ cemuhook protocol spec (https://v1993.github.io/cemuhook-protocol/).
 import argparse
 import asyncio
 import json
+import re
 import socket
 import ssl
 import struct
@@ -67,6 +68,8 @@ DSU_SERVER_ID = 0xFFFFFFFF
 DSU_PORT = 26760
 MAX_PADS = 4
 CLIENT_TIMEOUT = 5.0  # seconds since last request before we forget a Dolphin client
+SLOT_RECONNECT_GRACE = 30.0
+CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 MSG_VERSION = bytes([0x00, 0x00, 0x10, 0x00])
 MSG_PORTS = bytes([0x01, 0x00, 0x10, 0x00])
@@ -374,19 +377,58 @@ class Hub:
     def __init__(self):
         self.pads = [PadState(i) for i in range(MAX_PADS)]
         self.ws_by_slot = {}  # slot -> WebSocketResponse
+        self.client_by_slot = {}  # slot -> durable browser controller id
+        self.reservations = {}  # controller id -> (slot, monotonic expiry)
 
-    def claim_slot(self):
+    def claim_slot(self, client_id, now=None):
+        now = time.monotonic() if now is None else now
+        for slot, owner_id in self.client_by_slot.items():
+            if owner_id == client_id:
+                self.pads[slot].reset()
+                return slot
+
+        reservation = self.reservations.get(client_id)
+        if reservation is not None:
+            slot, expiry = reservation
+            if expiry > now and not self.pads[slot].connected:
+                self.pads[slot].connected = True
+                self.pads[slot].reset()
+                self.client_by_slot[slot] = client_id
+                del self.reservations[client_id]
+                return slot
+            if expiry <= now:
+                del self.reservations[client_id]
+
+        reserved_slots = {
+            slot
+            for reserved_id, (slot, expiry) in list(self.reservations.items())
+            if expiry > now
+        }
+        self.reservations = {
+            reserved_id: value
+            for reserved_id, value in self.reservations.items()
+            if value[1] > now
+        }
         for i, pad in enumerate(self.pads):
-            if not pad.connected:
+            if not pad.connected and i not in reserved_slots:
                 pad.connected = True
                 pad.reset()
+                self.client_by_slot[i] = client_id
                 return i
         return None
 
-    def release_slot(self, slot):
+    def release_slot(self, slot, client_id, ws, now=None):
+        # A page reload can establish its replacement socket before the old
+        # handler exits. Only the current socket is allowed to release the slot.
+        if self.ws_by_slot.get(slot) is not ws:
+            return False
+        now = time.monotonic() if now is None else now
         self.pads[slot].connected = False
         self.pads[slot].reset()
         self.ws_by_slot.pop(slot, None)
+        self.client_by_slot.pop(slot, None)
+        self.reservations[client_id] = (slot, now + SLOT_RECONNECT_GRACE)
+        return True
 
 
 async def ws_handler(request):
@@ -394,13 +436,22 @@ async def ws_handler(request):
     ws = web.WebSocketResponse(heartbeat=20)
     await ws.prepare(request)
 
-    slot = hub.claim_slot()
+    client_id = request.query.get("client", "")
+    if not CLIENT_ID_RE.fullmatch(client_id):
+        await ws.send_json({"t": "invalid_client"})
+        await ws.close()
+        return ws
+
+    slot = hub.claim_slot(client_id)
     if slot is None:
         await ws.send_json({"t": "full"})
         await ws.close()
         return ws
 
+    previous_ws = hub.ws_by_slot.get(slot)
     hub.ws_by_slot[slot] = ws
+    if previous_ws is not None and previous_ws is not ws:
+        await previous_ws.close()
     await ws.send_json(
         {
             "t": "welcome",
@@ -427,11 +478,11 @@ async def ws_handler(request):
             elif msg.type == WSMsgType.ERROR:
                 break
     finally:
-        hub.release_slot(slot)
-        uinput = request.app.get("uinput")
-        if uinput is not None:
-            uinput.neutralize(slot)
-        print(f"[ws] player {slot + 1} disconnected")
+        if hub.release_slot(slot, client_id, ws):
+            uinput = request.app.get("uinput")
+            if uinput is not None:
+                uinput.neutralize(slot)
+            print(f"[ws] player {slot + 1} disconnected")
     return ws
 
 
