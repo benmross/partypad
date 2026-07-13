@@ -279,6 +279,12 @@ PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
 
 ## Roadmap
 
+The detailed plan for self-service UMD authorization, cross-platform Dolphin
+support, packaged desktop applications, and a measured campus rollout is in
+[`docs/roadmaps/umd-self-service.md`](docs/roadmaps/umd-self-service.md). It
+distinguishes current behavior from proposed milestones and is the canonical
+handoff for future contributors.
+
 1. Expand motion testing and normalization across more iOS and Android devices,
    browsers, and grip orientations.
 2. Add automated integration tests for AP startup and cleanup in a network

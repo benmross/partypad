@@ -26,6 +26,18 @@ working behavior and describe limitations honestly.
   WebSocket input fallback.
 - `tests/`: standard-library unit tests.
 
+## Project direction
+
+- `docs/roadmaps/umd-self-service.md` is the canonical plan for self-service
+  UMD authorization, abuse controls, cross-platform Dolphin support, packaged
+  desktop releases, and the campus pilot. Read it before working in those areas
+  and update it when decisions or milestone status change.
+- The current public service is intentionally still owner-operated. Never solve
+  distribution by embedding or sharing the existing `HOST_TOKEN`; implement the
+  per-device authorization migration described in the roadmap.
+- The root README documents current behavior. Roadmap items must not be
+  described as shipped until their gate is actually met and tested.
+
 ## Commands
 
 ```sh
