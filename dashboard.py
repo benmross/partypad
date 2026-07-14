@@ -39,7 +39,7 @@ button{cursor:pointer}.error{color:#fca5a5}a{color:#93c5fd;overflow-wrap:anywher
 const byId=id=>document.getElementById(id);
 async function post(path,data={}){try{let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});let j=await r.json();if(!r.ok)byId('error').textContent=j.error||'Request failed';else byId('error').textContent='';await refresh()}catch(e){byId('error').textContent='Dashboard request failed: '+e.message}}
 async function refresh(){try{let r=await fetch('/api/status');if(!r.ok)throw new Error(`HTTP ${r.status}`);let s=await r.json();byId('auth').textContent=s.authorization;byId('dolphin').textContent=s.dolphin;
-let join=byId('join'),qr=byId('qr');join.textContent=s.join_url||'';join.href=s.join_url||'#';qr.hidden=!s.qr;qr.src=s.qr||'';byId('logs').textContent=(s.logs||[]).join('\n');
+let join=byId('join'),qr=byId('qr');join.textContent=s.join_url||'';join.href=s.join_url||'#';qr.hidden=!s.qr;qr.src=s.qr||'';byId('logs').textContent=(s.logs||[]).join('\\n');
 byId('players').innerHTML=[1,2,3,4].map(n=>{let p=(s.players||[]).find(x=>x.player===n);return `<div class=player>Player ${n}<br>${p?(p.path+(p.rtt_ms==null?'':' · '+p.rtt_ms+' ms')):'waiting'}</div>`}).join('');byId('error').textContent=''}catch(e){byId('error').textContent='Dashboard status failed: '+e.message}}
 setInterval(refresh,1000);refresh();</script>"""
 

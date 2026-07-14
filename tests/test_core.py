@@ -361,6 +361,10 @@ class DeviceAuthorizationTests(unittest.TestCase):
 
 
 class DashboardTests(unittest.IsolatedAsyncioTestCase):
+    def test_rendered_dashboard_javascript_escapes_log_newlines(self):
+        self.assertIn("(s.logs||[]).join('\\n')", dashboard.DASHBOARD_HTML)
+        self.assertNotIn("(s.logs||[]).join('\n')", dashboard.DASHBOARD_HTML)
+
     async def test_dashboard_requires_launch_token_and_does_not_expose_secrets(self):
         from aiohttp import CookieJar
         from aiohttp.test_utils import TestClient, TestServer
