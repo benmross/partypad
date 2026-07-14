@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -99,6 +100,7 @@ class DashboardState:
             self.state_path.unlink(missing_ok=True)
             return
         state = self.session_state()
+        revoke_task = None
         if isinstance(state.get("end_url"), str) and isinstance(state.get("host_secret"), str):
             def revoke():
                 request = urllib.request.Request(
@@ -109,10 +111,7 @@ class DashboardState:
                 )
                 with urllib.request.urlopen(request, timeout=5):
                     pass
-            try:
-                await asyncio.to_thread(revoke)
-            except OSError:
-                pass
+            revoke_task = asyncio.create_task(asyncio.to_thread(revoke))
         self.process.terminate()
         try:
             await asyncio.wait_for(self.process.wait(), 5)
@@ -121,6 +120,11 @@ class DashboardState:
             await self.process.wait()
         if self.reader:
             await self.reader
+        if revoke_task is not None:
+            try:
+                await revoke_task
+            except OSError:
+                pass
         self.state_path.unlink(missing_ok=True)
 
     async def close(self) -> None:
@@ -249,9 +253,21 @@ async def run_dashboard(service_url: str) -> None:
     url = f"http://127.0.0.1:{port}/launch/{token}"
     print(f"PartyPad dashboard: {url}")
     webbrowser.open(url)
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    installed_signals = []
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(signum, stop.set)
+            installed_signals.append(signum)
+        except (NotImplementedError, RuntimeError):
+            pass
     try:
-        await asyncio.Event().wait()
+        await stop.wait()
+        print("Stopping PartyPad…")
     finally:
+        for signum in installed_signals:
+            loop.remove_signal_handler(signum)
         await runner.cleanup()
 
 

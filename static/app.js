@@ -20,6 +20,8 @@ const diagnostics = [];
 let restartPending = false;
 const G = 9.80665;
 const PROTOCOL_VERSION = 1;
+const RTC_DISPLAY_INTERVAL_MS = 5000;
+const RTC_METRIC_INTERVAL_MS = 30000;
 const D2R = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // Tested Motorola Chrome reports accelerationIncludingGravity with the opposite
@@ -176,13 +178,18 @@ async function startWebRtc(iceServers) {
     setStatus(`Player ${playerNumber || "?"} · ${path.label}`);
     sendMetric("transport", path.dimension, performance.now() - negotiationStarted);
     recordDiagnostic("webrtc_connected", { path: path.dimension, negotiation_ms: Math.round(performance.now() - negotiationStarted) });
+    let lastMetricAt = 0;
     rtcStatsTimer = setInterval(async () => {
       if (!rtc || rtc.connectionState !== "connected") return;
       const current = await selectedPath(rtc);
       setStatus(`Player ${playerNumber || "?"} · ${current.label}`);
-      if (current.rtt != null) sendMetric("rtt_ms", current.dimension, current.rtt);
-      if (current.rtt != null) recordDiagnostic("rtt", { path: current.dimension, rtt_ms: current.rtt });
-    }, 30000);
+      const now = performance.now();
+      if (current.rtt != null && now - lastMetricAt >= RTC_METRIC_INTERVAL_MS) {
+        lastMetricAt = now;
+        sendMetric("rtt_ms", current.dimension, current.rtt);
+        recordDiagnostic("rtt", { path: current.dimension, rtt_ms: current.rtt });
+      }
+    }, RTC_DISPLAY_INTERVAL_MS);
   };
   inputChannel.onclose = () => {
     if (rtcStatsTimer) clearInterval(rtcStatsTimer);
