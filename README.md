@@ -68,6 +68,18 @@ uv sync
 uv run python server.py
 ```
 
+The unified entry point opens the loopback dashboard:
+
+```sh
+uv run python partypad.py
+```
+
+The dashboard shows authorization and Dolphin setup state, starts/stops online
+sessions, displays the controller QR/link, and reports player transport/RTT.
+Its random launch credential is stored in an HttpOnly same-site cookie and the
+server binds only to `127.0.0.1`. The development/advanced terminal interface
+remains available with `uv run python partypad.py serve` or `server.py`.
+
 With no arguments, PartyPad asks which supported system will be played:
 
 ```text
@@ -97,10 +109,24 @@ uv sync --extra online
 uv run python server.py --system wii --online
 ```
 
-`setup_online.py` is a one-time service-operator step that provisions the
-private host credential; it is not needed for each session. A new installation
-must either receive an authorized host token from its service operator or
-deploy its own service from [`cloudflare/`](cloudflare/).
+Authorize a laptop once through the system browser before its first online
+session:
+
+```sh
+uv run python setup_online.py
+```
+
+The protocol-v1 Worker and production D1 schema are deployed. Browser approval
+remains fail-closed until the Cloudflare Access application and its audience
+and team values are configured as described in
+[`cloudflare/README.md`](cloudflare/README.md).
+
+The desktop uses a verifier-bound device code and receives its own revocable
+credential; there is no shared host token. The OS credential service is used
+when Python's optional `keyring` package exposes one, with a private user config
+file as the fallback. `--status` shows the local authorization state and
+`--forget` removes the local copy (use the authenticated device page to revoke
+the server-side credential).
 
 The QR points to `https://partypad.benmross.com`. Phones do not need to share a
 network with the computer. Both sides make outbound connections; WebRTC ICE
@@ -118,7 +144,7 @@ TCP/TLS TURN, or `relay` for the selected path.
 Each session uses independent random host and join
 secrets. The join secret is carried in the URL fragment, which is not sent in
 HTTP requests or referrer headers. Normal shutdown revokes the session
-immediately; abandoned sessions expire after eight hours.
+immediately; abandoned sessions expire after four hours.
 
 Useful options:
 
@@ -194,15 +220,21 @@ system with custom firewall or network policy.
 
 ## Dolphin setup
 
-Close Dolphin, then run:
+Close Dolphin, preview the exact changes, then configure it:
 
 ```sh
+uv run python setup_dolphin.py --preview
 uv run python setup_dolphin.py
 ```
 
 This adds `partypad:127.0.0.1:26760` to `DSUClient.ini` and maps Wii Remotes
-1–4 to PartyPad slots 1–4. Existing configuration files are backed up once with
-the suffix `.partypad-bak`. Dolphin must remain closed while the files change.
+1–4 to PartyPad slots 1–4. It discovers current Windows, macOS, Linux XDG,
+legacy Linux, and Flatpak directories plus `DOLPHIN_EMU_USERPATH`. Portable
+builds use `--portable-dir`; custom Dolphin user directories use
+`--dolphin-user-dir`. Multiple populated directories are never guessed between.
+Existing files are backed up once, writes are atomic and idempotent, and
+`--revert` restores the original state. Dolphin must remain closed while files
+change unless `--force` explicitly overrides the protection.
 
 | Phone control | DSU field | Wii input |
 |---|---|---|
@@ -246,12 +278,33 @@ NES joypad is the initial test target.
 For a non-default uinput device permission setup, grant only the user running
 PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
 
+## Native alpha builds
+
+The PyInstaller specification creates a self-contained executable with the
+online dependencies and controller assets embedded:
+
+```sh
+uv sync --extra online --group build
+uv run pyinstaller --clean --noconfirm partypad.spec
+./dist/partypad --help
+```
+
+Tagged CI builds native Linux x86-64, Windows x64, macOS Intel, and macOS Apple
+Silicon artifacts. Draft releases contain unsigned archives, a Windows
+installer, SHA-256 checksums, and a CycloneDX runtime SBOM. These are technical
+alpha artifacts: Windows signing and Apple signing/notarization remain required
+before PartyPad is presented as easy to install. See
+[`docs/signing-and-release.md`](docs/signing-and-release.md).
+
 ## Limitations
 
 - **Experimental RetroArch support:** the uinput backend currently covers a
   standard digital/analog RetroPad and an NES phone layout. Mouse, lightgun,
   paddle, keyboard, rumble, motion, and system-specific layouts are not yet
   implemented. RetroArch support is Linux-only.
+- **Unsigned packaged alpha:** native CI and a locally smoke-tested Linux
+  one-file build exist, but no signed/notarized public artifact has passed a
+  clean-laptop end-to-end test yet. Expect OS security warnings.
 - **Experimental motion:** testing on iPhone Safari and Motorola Chrome found
   opposite gravity polarity in `accelerationIncludingGravity`. PartyPad
   normalizes Android to the working iOS convention before constructing DSU
@@ -275,7 +328,8 @@ PartyPad read/write access to `/dev/uinput`; do not run the web server as root.
   immediately, but aiortc can take several seconds to finish its ICE answer on
   hosts with multiple network interfaces before direct or TURN transport takes
   over.
-- **No system service or packaged release yet:** run it from the checkout.
+- **No signed public release or system service yet:** run from the checkout or
+  build the documented unsigned technical-alpha executable locally.
 
 ## Roadmap
 
@@ -299,9 +353,18 @@ handoff for future contributors.
 uv sync
 uv sync --extra online
 uv run python -m unittest discover -s tests -v
-uv run python -m py_compile server.py online_transport.py systems.py uinput_backend.py hotspot.py ap_helper.py setup_dolphin.py setup_online.py setup_retroarch.py
+uv run python -m py_compile server.py online_transport.py device_auth.py systems.py uinput_backend.py hotspot.py ap_helper.py setup_dolphin.py setup_online.py setup_retroarch.py dashboard.py partypad.py version.py tools/generate_sbom.py tools/browser_smoke.py
 node --check static/app.js
 cd cloudflare && nvm install && npm ci && npm run check
+```
+
+An opt-in Firefox smoke test drives the real controller page through trickled
+ICE, WebRTC DataChannel input, and page-lifecycle neutralization. It requires a
+local Firefox and GeckoDriver:
+
+```sh
+uv sync --extra online --group browser
+uv run --frozen python tools/browser_smoke.py
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidance and

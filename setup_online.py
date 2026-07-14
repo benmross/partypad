@@ -1,53 +1,40 @@
-"""Provision PartyPad's private desktop-to-service authentication token."""
+"""Authorize this PartyPad desktop with the public service."""
 
 import argparse
-import secrets
-import subprocess
-import sys
-from pathlib import Path
+import os
 
-from online_transport import host_token_path
-
-
-def save_token(path: Path, token: str):
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path.parent.chmod(0o700)
-    path.write_text(token + "\n")
-    path.chmod(0o600)
+from device_auth import authorize_device, default_credential_store
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="configure PartyPad online authentication")
-    parser.add_argument("--rotate", action="store_true", help="replace an existing host token")
+    parser = argparse.ArgumentParser(description="authorize PartyPad online sessions")
     parser.add_argument(
-        "--worker-dir",
-        type=Path,
-        default=Path(__file__).parent / "cloudflare",
-        help=argparse.SUPPRESS,
+        "--service-url",
+        default=os.environ.get("PARTYPAD_SERVICE_URL", "https://partypad.benmross.com"),
+        help="PartyPad service URL",
     )
+    parser.add_argument("--device-name", help="name shown on the device-management page")
+    parser.add_argument("--status", action="store_true", help="show local authorization state")
+    parser.add_argument("--forget", action="store_true", help="remove the locally stored credential")
     args = parser.parse_args(argv)
-    path = host_token_path()
-    if path.exists() and not args.rotate:
-        token = path.read_text().strip()
-        if not token:
-            parser.error(f"existing token file is empty: {path}")
-    else:
-        token = secrets.token_hex(32)
-        save_token(path, token)
-
-    wrangler = args.worker_dir / "node_modules" / ".bin" / "wrangler"
-    if not wrangler.exists():
-        parser.error(f"Wrangler is not installed; run `npm install` in {args.worker_dir}")
-    result = subprocess.run(
-        [str(wrangler), "secret", "put", "HOST_TOKEN"],
-        cwd=args.worker_dir,
-        input=token + "\n",
-        text=True,
-        check=False,
+    store = default_credential_store()
+    if args.status:
+        credential = store.load()
+        if credential is None:
+            print("This laptop is not authorized.")
+        else:
+            print(f"Authorized as {credential.device_name}; expires {credential.expires_at}.")
+        return
+    if args.forget:
+        store.delete()
+        print("Removed the local PartyPad device credential.")
+        return
+    credential = authorize_device(
+        args.service_url,
+        device_name=args.device_name,
+        store=store,
     )
-    if result.returncode:
-        sys.exit(f"Wrangler could not save HOST_TOKEN (status {result.returncode})")
-    print(f"PartyPad host authentication configured; private token saved at {path}")
+    print(f"Authorized {credential.device_name}; PartyPad online mode is ready.")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,13 @@ let hostedLanding = false;
 let reconnectDelay = 500;
 let reconnectTimer = null;
 let debugOn = false;
+let rtcStatsTimer = null;
+let relayBytes = 0;
+const joinStarted = performance.now();
+const diagnostics = [];
+let restartPending = false;
 const G = 9.80665;
+const PROTOCOL_VERSION = 1;
 const D2R = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // Tested Motorola Chrome reports accelerationIncludingGravity with the opposite
@@ -79,12 +85,13 @@ function connect() {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.t === "hello" && onlineSession) {
       ws.send(JSON.stringify({ t: "auth", role: "controller", secret: onlineSession.secret,
-                               client: controllerId() }));
+                               client: controllerId(), protocol: PROTOCOL_VERSION }));
     } else if (m.t === "auth_ok" && onlineSession) {
       const config = m.config || {};
       applyControllerMode(config.controller_mode || "wii", config.system);
       startWebRtc(m.ice_servers || []);
       setStatus("connected · relay");
+      sendMetric("transport", "websocket", performance.now() - joinStarted);
     } else if (m.t === "control") {
       handleControl(m.message || {});
     } else if (m.t === "answer" && rtc) {
@@ -108,9 +115,16 @@ function handleControl(m) {
       setStatus("all 4 controllers in use");
     } else if (m.t === "transport" && m.path) {
       setStatus(`Player ${playerNumber || "?"} · ${m.path}`);
+    } else if (m.t === "ice_restart") {
+      setStatus(`Player ${playerNumber || "?"} · retrying connection…`);
+      restartWebRtc();
     }
 }
 function setStatus(s) { document.getElementById("status").textContent = s; }
+function recordDiagnostic(event, detail = {}) {
+  diagnostics.push({ at_ms: Math.round(performance.now()), event, ...detail });
+  if (diagnostics.length > 200) diagnostics.shift();
+}
 
 async function selectedPath(pc) {
   try {
@@ -120,21 +134,36 @@ async function selectedPath(pc) {
       if (item.type === "candidate-pair" && item.state === "succeeded" &&
           (item.selected || item.nominated)) pair = item;
     });
-    if (!pair) return "WebRTC";
+    if (!pair) return { label: "WebRTC", dimension: "", rtt: null };
     const local = stats.get(pair.localCandidateId);
     const remote = stats.get(pair.remoteCandidateId);
     const relayed = local?.candidateType === "relay" || remote?.candidateType === "relay";
-    const protocol = (local?.protocol || remote?.protocol || "").toUpperCase();
-    const rtt = pair.currentRoundTripTime == null ? "" : ` · ${Math.round(pair.currentRoundTripTime * 1000)} ms`;
-    return `${relayed ? "TURN" : "direct"}${protocol ? "/" + protocol : ""}${rtt}`;
+    const peerProtocol = (local?.protocol || remote?.protocol || "").toLowerCase();
+    const relayProtocol = (local?.relayProtocol || remote?.relayProtocol || "").toLowerCase();
+    const protocol = relayed ? (relayProtocol || peerProtocol) : peerProtocol;
+    const rttMs = pair.currentRoundTripTime == null ? null : Math.round(pair.currentRoundTripTime * 1000);
+    const labelProtocol = protocol ? `/${protocol.toUpperCase()}` : "";
+    const rttLabel = rttMs == null ? "" : ` · ${rttMs} ms`;
+    const dimension = ["udp", "tcp", "tls"].includes(protocol)
+      ? `${relayed ? "turn" : "direct"}_${protocol}`
+      : "";
+    return { label: `${relayed ? "TURN" : "direct"}${labelProtocol}${rttLabel}`, dimension, rtt: rttMs };
   } catch {
-    return "WebRTC";
+    return { label: "WebRTC", dimension: "", rtt: null };
+  }
+}
+
+function sendMetric(name, dimension, value = 0) {
+  if (onlineSession && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ t: "metric", name, dimension, value: Math.max(0, Math.round(value)) }));
   }
 }
 
 async function startWebRtc(iceServers) {
   if (!onlineSession || !window.RTCPeerConnection || !ws || ws.readyState !== WebSocket.OPEN) return;
   if (rtc) rtc.close();
+  if (rtcStatsTimer) clearInterval(rtcStatsTimer);
+  const negotiationStarted = performance.now();
   rtc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 1 });
   inputChannel = rtc.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
   rtc.onicecandidate = ({ candidate }) => {
@@ -144,12 +173,27 @@ async function startWebRtc(iceServers) {
   };
   inputChannel.onopen = async () => {
     const path = await selectedPath(rtc);
-    setStatus(`Player ${playerNumber || "?"} · ${path}`);
+    setStatus(`Player ${playerNumber || "?"} · ${path.label}`);
+    sendMetric("transport", path.dimension, performance.now() - negotiationStarted);
+    recordDiagnostic("webrtc_connected", { path: path.dimension, negotiation_ms: Math.round(performance.now() - negotiationStarted) });
+    rtcStatsTimer = setInterval(async () => {
+      if (!rtc || rtc.connectionState !== "connected") return;
+      const current = await selectedPath(rtc);
+      setStatus(`Player ${playerNumber || "?"} · ${current.label}`);
+      if (current.rtt != null) sendMetric("rtt_ms", current.dimension, current.rtt);
+      if (current.rtt != null) recordDiagnostic("rtt", { path: current.dimension, rtt_ms: current.rtt });
+    }, 30000);
   };
-  inputChannel.onclose = () => setStatus(`Player ${playerNumber || "?"} · relay`);
+  inputChannel.onclose = () => {
+    if (rtcStatsTimer) clearInterval(rtcStatsTimer);
+    rtcStatsTimer = null;
+    setStatus(`Player ${playerNumber || "?"} · relay`);
+  };
   rtc.onconnectionstatechange = () => {
     if (["failed", "disconnected", "closed"].includes(rtc.connectionState)) {
       setStatus(`Player ${playerNumber || "?"} · relay`);
+      recordDiagnostic("webrtc_state", { state: rtc.connectionState });
+      if (rtc.connectionState === "failed") restartWebRtc();
     }
   };
   try {
@@ -160,6 +204,41 @@ async function startWebRtc(iceServers) {
   } catch {
     setStatus(`Player ${playerNumber || "?"} · relay`);
   }
+}
+
+async function restartWebRtc() {
+  if (restartPending || !rtc || !ws || ws.readyState !== WebSocket.OPEN) return;
+  restartPending = true;
+  try {
+    rtc.restartIce();
+    await rtc.setLocalDescription(await rtc.createOffer({ iceRestart: true }));
+    ws.send(JSON.stringify({ t: "offer", sdp: rtc.localDescription.sdp }));
+    recordDiagnostic("ice_restart");
+  } catch {
+    recordDiagnostic("ice_restart_failed");
+  } finally {
+    restartPending = false;
+  }
+}
+
+function neutralizeForLifecycle() {
+  Object.keys(state.b).forEach((key) => { state.b[key] = false; });
+  state.left_x = 0; state.left_y = 0; state.px = 0; state.py = 0; state.m = null;
+  pointer.px = 0; pointer.py = 0;
+  document.querySelectorAll(".pressed,.arrow.on").forEach((item) => item.classList.remove("pressed", "on"));
+  dirty = true;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const data = { t: "i", b: { ...state.b }, left_x: 0, left_y: 0, px: 0, py: 0 };
+  try {
+    if (onlineSession) {
+      const envelope = { seq: ++inputSequence, data };
+      if (inputChannel && inputChannel.readyState === "open") inputChannel.send(JSON.stringify(envelope));
+      else ws.send(JSON.stringify({ t: "input", ...envelope }));
+    } else {
+      ws.send(JSON.stringify(data));
+    }
+  } catch {}
+  recordDiagnostic("lifecycle_neutral");
 }
 
 function applyControllerMode(mode, system) {
@@ -212,14 +291,16 @@ function pump(timestamp) {
     if (pendingRc) { msg.rc = 1; pendingRc = false; }
     if (onlineSession) {
       const envelope = { seq: ++inputSequence, data: msg };
+      const relayMessage = JSON.stringify({ t: "input", ...envelope });
       if (inputChannel && inputChannel.readyState === "open" && inputChannel.bufferedAmount < 65536) {
         try {
           inputChannel.send(JSON.stringify(envelope));
         } catch {
-          if (ws.bufferedAmount < 65536) ws.send(JSON.stringify({ t: "input", ...envelope }));
+          if (ws.bufferedAmount < 65536) { ws.send(relayMessage); relayBytes += relayMessage.length; }
         }
       } else if (ws.bufferedAmount < 65536) {
-        ws.send(JSON.stringify({ t: "input", ...envelope }));
+        ws.send(relayMessage);
+        relayBytes += relayMessage.length;
       }
     } else if (ws.bufferedAmount < 65536) {
       ws.send(JSON.stringify(msg));
@@ -448,7 +529,38 @@ document.getElementById("status").addEventListener("click", () => {
   debugOn = !debugOn;
   document.getElementById("debug").classList.toggle("hidden", !debugOn);
 });
+document.getElementById("export-diagnostics").addEventListener("click", () => {
+  const report = {
+    schema: 1,
+    generated_at: new Date().toISOString(),
+    online: Boolean(onlineSession),
+    browser: navigator.userAgent,
+    events: diagnostics,
+  };
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+  link.download = `partypad-diagnostics-${Date.now()}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+});
+window.addEventListener("online", () => {
+  recordDiagnostic("network_online");
+  if (ws && ws.readyState === WebSocket.OPEN) restartWebRtc();
+  else if (onlineSession && joined) connect();
+});
+window.addEventListener("offline", () => recordDiagnostic("network_offline"));
+window.addEventListener("pagehide", neutralizeForLifecycle);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) neutralizeForLifecycle();
+  else if (onlineSession && (!ws || ws.readyState === WebSocket.CLOSED)) connect();
+});
 bindButtons();
 bindDpad();
 bindRecenter();
 requestAnimationFrame(pump);
+setInterval(() => {
+  if (relayBytes > 0) {
+    sendMetric("relay_bytes", "websocket", relayBytes);
+    relayBytes = 0;
+  }
+}, 60000);

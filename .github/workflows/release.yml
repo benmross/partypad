@@ -1,0 +1,97 @@
+name: Unsigned alpha release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux-x86_64
+            executable: partypad
+          - os: windows-latest
+            artifact: windows-x64
+            executable: partypad.exe
+          - os: macos-15-intel
+            artifact: macos-intel
+            executable: partypad
+          - os: macos-15
+            artifact: macos-apple-silicon
+            executable: partypad
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --frozen --extra online --group build
+      - run: uv run --frozen pyinstaller --clean --noconfirm partypad.spec
+      - name: Smoke-test embedded runtime
+        shell: bash
+        run: |
+          ./dist/${{ matrix.executable }} --help
+          ./dist/${{ matrix.executable }} authorize --help
+          ./dist/${{ matrix.executable }} setup-dolphin --help
+      - name: Generate runtime SBOM and archive staging tree
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME:-manual}"
+          mkdir -p "stage/PartyPad-${version}"
+          cp "dist/${{ matrix.executable }}" "stage/PartyPad-${version}/"
+          cp README.md LICENSE packaging/UNSIGNED-ALPHA.txt "stage/PartyPad-${version}/"
+          uv run --frozen python tools/generate_sbom.py "stage/PartyPad-${version}/partypad.cdx.json"
+      - name: Build Unix archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME:-manual}"
+          tar -C stage -czf "PartyPad-${version}-${{ matrix.artifact }}-unsigned.tar.gz" "PartyPad-${version}"
+      - name: Build Windows archive and installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "manual" }
+          Compress-Archive -Path "stage/PartyPad-$version" -DestinationPath "PartyPad-$version-${{ matrix.artifact }}-unsigned.zip"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=$($version.TrimStart('v'))" "/DSourceDir=$((Resolve-Path dist).Path)" "packaging\windows\partypad.iss"
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir upload
+          find . -maxdepth 2 -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*setup-unsigned.exe' \) -exec cp {} upload/ \;
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: upload/*
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: release
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: release
+        run: sha256sum * > SHA256SUMS
+      - name: Create draft unsigned-alpha release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --draft --title "PartyPad $GITHUB_REF_NAME (unsigned alpha)" \
+            --notes "Unsigned early-alpha native builds. Verify SHA256SUMS and read UNSIGNED-ALPHA.txt inside the archive. Windows and macOS signing/notarization are required before a broad nontechnical launch."

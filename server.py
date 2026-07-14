@@ -31,10 +31,8 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 import qrcode
 
-from hotspot import AP_IP, AccessPoint
-from online_transport import OnlineHost, create_session, load_host_token
+from online_transport import OnlineHost, available_update, create_session, load_device_token
 from systems import SUPPORTED_SYSTEMS, SYSTEMS, get_system
-from uinput_backend import UInputBackend
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
@@ -98,6 +96,8 @@ BUTTON_NAMES = (
     "dpad_left",
     "dpad_right",
 )
+CONTROLLER_INPUT_KEYS = {"t", "b", "left_x", "left_y", "px", "py", "m", "o", "aim", "rc"}
+MOTION_KEYS = {"ax", "ay", "az", "ra", "rb", "rg", "orient", "accel_polarity"}
 
 
 def clamp(v, lo, hi):
@@ -111,6 +111,57 @@ def finite_float(value):
     except (TypeError, ValueError, OverflowError):
         return None
     return value if math.isfinite(value) else None
+
+
+def bounded_number(value, limit):
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and abs(value) <= limit
+    )
+
+
+def valid_controller_input(value):
+    """Validate the complete untrusted phone-input schema before state changes."""
+    if not isinstance(value, dict) or value.get("t") != "i":
+        return False
+    if any(key not in CONTROLLER_INPUT_KEYS for key in value):
+        return False
+    buttons = value.get("b", {})
+    if not isinstance(buttons, dict) or any(
+        key not in BUTTON_NAMES or not isinstance(button, bool)
+        for key, button in buttons.items()
+    ):
+        return False
+    if any(
+        key in value and not bounded_number(value[key], 1.5)
+        for key in ("left_x", "left_y", "px", "py")
+    ):
+        return False
+    motion = value.get("m")
+    if motion is not None:
+        if not isinstance(motion, dict) or any(key not in MOTION_KEYS for key in motion):
+            return False
+        if any(key in motion and not bounded_number(motion[key], 50) for key in ("ax", "ay", "az")):
+            return False
+        if any(key in motion and not bounded_number(motion[key], 5000) for key in ("ra", "rb", "rg")):
+            return False
+        if "orient" in motion and not bounded_number(motion["orient"], 360):
+            return False
+        if "accel_polarity" in motion and (
+            isinstance(motion["accel_polarity"], bool)
+            or motion["accel_polarity"] not in (-1, 1)
+        ):
+            return False
+    for key, length in (("o", 3), ("aim", 2)):
+        if key in value and (
+            not isinstance(value[key], list)
+            or len(value[key]) != length
+            or any(not bounded_number(item, 360) for item in value[key])
+        ):
+            return False
+    return "rc" not in value or value["rc"] is True or value["rc"] == 1
 
 
 def write_log(logf, slot: int, d: dict):
@@ -181,8 +232,8 @@ class PadState:
         b = d.get("b")
         if isinstance(b, dict):
             for name in BUTTON_NAMES:
-                if name in b:
-                    self.buttons[name] = bool(b[name])
+                if isinstance(b.get(name), bool):
+                    self.buttons[name] = b[name]
         for attr in ("left_x", "left_y"):
             if attr in d:
                 value = finite_float(d[attr])
@@ -219,9 +270,15 @@ class PadState:
         rb = finite_float(m.get("rb", 0.0)) or 0.0
         rg = finite_float(m.get("rg", 0.0)) or 0.0  # alpha/beta/gamma rate
         # phone frame -> DSU frame (see mapping notes at top of file)
-        self.accel = (SGN_ACCEL_X * ax, SGN_ACCEL_Y * az, SGN_ACCEL_Z * ay)
+        self.accel = tuple(
+            clamp(value, -50.0, 50.0)
+            for value in (SGN_ACCEL_X * ax, SGN_ACCEL_Y * az, SGN_ACCEL_Z * ay)
+        )
         if CONFIG["gyro"]:
-            self.gyro = (SGN_GYRO_PITCH * rb, SGN_GYRO_YAW * ra, SGN_GYRO_ROLL * rg)
+            self.gyro = tuple(
+                clamp(value, -5000.0, 5000.0)
+                for value in (SGN_GYRO_PITCH * rb, SGN_GYRO_YAW * ra, SGN_GYRO_ROLL * rg)
+            )
         else:
             # A normal Wii Remote's steering comes from gravity/tilt. Sending the
             # phone gyro makes a steady wheel behave as if steering were movement-based.
@@ -451,7 +508,7 @@ class Hub:
 
 async def ws_handler(request):
     hub = request.app["hub"]
-    ws = web.WebSocketResponse(heartbeat=20)
+    ws = web.WebSocketResponse(heartbeat=20, max_msg_size=16_384)
     await ws.prepare(request)
 
     client_id = request.query.get("client", "")
@@ -479,7 +536,7 @@ async def ws_handler(request):
             "controller_mode": request.app["system"].controller_mode,
         }
     )
-    print(f"[ws] player {slot + 1} connected from {request.remote}")
+    print(f"[ws] player {slot + 1} connected")
 
     try:
         async for msg in ws:
@@ -488,7 +545,7 @@ async def ws_handler(request):
                     d = json.loads(msg.data)
                 except ValueError:
                     continue
-                if d.get("t") == "i":
+                if valid_controller_input(d):
                     hub.pads[slot].update_from_json(d)
                     logf = request.app.get("log")
                     if logf is not None:
@@ -534,6 +591,10 @@ async def start_background(app):
         print(f"[dsu] serving on 127.0.0.1:{DSU_PORT} (point Dolphin here)")
 
     if app["backend"] in ("retroarch", "both"):
+        if sys.platform != "linux":
+            raise RuntimeError("the experimental RetroArch/uinput backend is available only on Linux")
+        from uinput_backend import UInputBackend
+
         try:
             app["uinput"] = UInputBackend(MAX_PADS)
         except PermissionError as exc:
@@ -598,6 +659,44 @@ def wifi_qr_payload(ssid: str, password: str) -> str:
         return "".join("\\" + char if char in r"\\;,:" else char for char in value)
 
     return f"WIFI:T:WPA;S:{escape(ssid)};P:{escape(password)};;"
+
+
+def write_runtime_state(app) -> None:
+    """Atomically expose bounded loopback-dashboard state to a parent process."""
+    path = app.get("state_file")
+    session = app.get("online_session")
+    if path is None or session is None:
+        return
+    host = app.get("online_host")
+    players = []
+    if host is not None:
+        players = [
+            {
+                "player": peer.slot + 1,
+                "path": peer.path,
+                "rtt_ms": peer.rtt_ms,
+            }
+            for peer in sorted(host.peers.values(), key=lambda item: item.slot)
+        ]
+    state = {
+        "join_url": session["join_url"],
+        "end_url": session["end_url"],
+        "host_secret": session["host_secret"],
+        "expires_at": session.get("expires_at"),
+        "players": players,
+    }
+    temporary = path.with_name(f".{path.name}.{os.getpid()}")
+    temporary.unlink(missing_ok=True)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            json.dump(state, output)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def ensure_cert(ip: str, regen: bool = False):
@@ -690,6 +789,7 @@ def build_parser():
         default=os.environ.get("PARTYPAD_SERVICE_URL", "https://partypad.benmross.com"),
         help="online session service (default: https://partypad.benmross.com)",
     )
+    parser.add_argument("--state-file", type=Path, help=argparse.SUPPRESS)
     parser.add_argument(
         "--log", action="store_true", help="write a diagnostic motion log to logs/*.jsonl"
     )
@@ -787,6 +887,8 @@ def main(argv=None):
     app["uinput"] = None
     app["log"] = None
     app["online_session"] = None
+    app["state_file"] = args.state_file
+    app["write_state"] = lambda: write_runtime_state(app)
     if args.log:
         log_dir = HERE / "logs"
         log_dir.mkdir(exist_ok=True)
@@ -801,24 +903,34 @@ def main(argv=None):
     app.on_cleanup.append(cleanup_background)
 
     access_point = None
+    ap_ip = None
     if args.ap:
-        access_point = AccessPoint(args.ap_interface, args.ap_name, args.ap_password)
+        if sys.platform != "linux":
+            parser.error("--ap is available only on Linux")
+        from hotspot import AP_IP, AccessPoint
 
-    lan_ip = args.ip or ("127.0.0.1" if args.online else AP_IP if args.ap else get_lan_ip())
+        access_point = AccessPoint(args.ap_interface, args.ap_name, args.ap_password)
+        ap_ip = AP_IP
+
+    lan_ip = args.ip or ("127.0.0.1" if args.online else ap_ip if args.ap else get_lan_ip())
 
     if args.online:
-        host_token = load_host_token()
-        if not host_token:
-            parser.error("--online requires PARTYPAD_HOST_TOKEN or `python setup_online.py`")
+        update = available_update(args.service_url)
+        if update:
+            print(f"[update] PartyPad {update[0]} is available: {update[1]}")
+        device_token = load_device_token()
+        if not device_token:
+            parser.error("--online requires device authorization; run `python setup_online.py`")
         try:
             app["online_session"] = create_session(
                 args.service_url,
-                host_token,
+                device_token,
                 system=system.id,
                 system_name=system.label,
                 controller_mode=system.controller_mode,
                 backend=backend,
             )
+            write_runtime_state(app)
         except RuntimeError as exc:
             parser.error(str(exc))
 
@@ -865,6 +977,8 @@ def main(argv=None):
     finally:
         if access_point is not None:
             access_point.stop()
+        if args.state_file is not None:
+            args.state_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

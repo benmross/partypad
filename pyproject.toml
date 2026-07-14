@@ -1,6 +1,6 @@
 [project]
 name = "partypad"
-version = "0.1.0"
+version = "0.2.0"
 description = "Turn phone browsers into controllers for Dolphin and RetroArch"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -10,13 +10,16 @@ keywords = ["dolphin", "retroarch", "emulation", "controller", "dsu", "uinput"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Topic :: Games/Entertainment",
 ]
 dependencies = [
     "aiohttp>=3.9",
-    "evdev>=1.7",
+    "evdev>=1.7; sys_platform == 'linux'",
+    "keyring>=25.7",
     "qrcode>=7.4",
 ]
 
@@ -27,6 +30,15 @@ Issues = "https://github.com/benmross/partypad/issues"
 [project.optional-dependencies]
 online = [
     "aiortc>=1.14,<2",
+]
+
+[dependency-groups]
+build = [
+    "packaging>=25",
+    "pyinstaller>=6.16,<7",
+]
+browser = [
+    "selenium>=4.39,<5",
 ]
 
 [tool.ruff]

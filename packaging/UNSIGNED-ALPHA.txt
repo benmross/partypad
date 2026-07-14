@@ -1,0 +1,8 @@
+PartyPad early alpha — unsigned build
+
+This artifact is not code-signed or notarized. Windows SmartScreen and macOS
+Gatekeeper may warn or block it. Verify the SHA-256 checksum published with the
+GitHub release. Do not describe this build as an easy public installation.
+
+The RetroArch/uinput and access-point backends remain experimental and
+Linux-only. Ordinary online Dolphin use must not require administrator access.

@@ -8,12 +8,28 @@
     {
       "pattern": "partypad.benmross.com",
       "custom_domain": true
+    },
+    {
+      "pattern": "auth.partypad.benmross.com",
+      "custom_domain": true
     }
   ],
+  "vars": {
+    "AUTH_HOST": "auth.partypad.benmross.com",
+    "LATEST_CLIENT_VERSION": "0.2.0"
+  },
   "assets": {
     "directory": "../static",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/config", "/static/*"]
+    "run_worker_first": [
+      "/api/*",
+      "/config",
+      "/status",
+      "/privacy",
+      "/acceptable-use",
+      "/support",
+      "/static/*"
+    ]
   },
   "durable_objects": {
     "bindings": [
@@ -23,6 +39,14 @@
       }
     ]
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "partypad-devices",
+      "database_id": "8aa1314f-8a92-457a-9f87-9b21b5c75c68",
+      "migrations_dir": "migrations"
+    }
+  ],
   "migrations": [
     {
       "tag": "v1",
@@ -31,5 +55,6 @@
   ],
   "observability": {
     "enabled": true
-  }
+  },
+  "triggers": { "crons": ["17 * * * *"] }
 }

@@ -8,11 +8,20 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  python:
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: windows-latest
+            python-version: "3.11"
+          - os: macos-15
+            python-version: "3.11"
     steps:
       - uses: actions/checkout@v6
       - name: Install uv and Python
@@ -21,8 +30,42 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra online
       - name: Run unit tests
         run: uv run --frozen python -m unittest discover -s tests -v
       - name: Compile Python sources
-        run: uv run --frozen python -m py_compile server.py hotspot.py ap_helper.py setup_dolphin.py
+        run: uv run --frozen python -m py_compile server.py online_transport.py device_auth.py systems.py uinput_backend.py hotspot.py ap_helper.py setup_dolphin.py setup_online.py setup_retroarch.py dashboard.py partypad.py version.py tools/generate_sbom.py
+      - name: Smoke-test portable CLIs
+        run: uv run --frozen python server.py --help && uv run --frozen python setup_dolphin.py --help && uv run --frozen python setup_online.py --help && uv run --frozen python partypad.py --help
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: cloudflare/.nvmrc
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: node --check ../static/app.js
+      - run: npx wrangler deploy --dry-run --outdir /tmp/partypad-worker-build
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install browser smoke dependencies
+        run: uv sync --frozen --extra online --group browser
+      - name: Run real-browser WebRTC smoke
+        run: uv run --frozen python tools/browser_smoke.py
