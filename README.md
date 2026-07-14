@@ -116,10 +116,11 @@ session:
 uv run python setup_online.py
 ```
 
-The protocol-v1 Worker and production D1 schema are deployed. Browser approval
-remains fail-closed until the Cloudflare Access application and its audience
-and team values are configured as described in
-[`cloudflare/README.md`](cloudflare/README.md).
+The protocol-v1 Worker and production D1 schema are deployed. Cloudflare Access
+protects the authentication hostname, and the Worker is configured to verify
+that application's audience and team issuer. An authenticated browser approval
+should still be exercised before distributing the first build; deployment
+details are in [`cloudflare/README.md`](cloudflare/README.md).
 
 The desktop uses a verifier-bound device code and receives its own revocable
 credential; there is no shared host token. The OS credential service is used

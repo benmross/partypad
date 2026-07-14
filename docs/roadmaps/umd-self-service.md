@@ -78,17 +78,18 @@ As of the date above:
 - Protocol v1 and its migrated production D1 database were deployed on
   2026-07-13. The old shared `HOST_TOKEN` secret was deleted. Device-code
   creation, public status/policy pages, D1 writes, custom domains, and the
-  fail-closed activation boundary pass hosted smoke tests. Access browser
-  approval is waiting only on the Access application/policy and its audience
-  and team values.
+  fail-closed activation boundary pass hosted smoke tests. On 2026-07-13, the
+  Access application began protecting only the authentication hostname and the
+  Worker was configured with its audience and team issuer. Authenticated
+  browser approval still needs an end-to-end smoke test.
 - The deployed service implements verifier-bound device codes, Access-JWT
   browser approval, hashed single-use credentials, device revocation, session
   quotas, a kill switch, retention cleanup, and four-hour sessions. Normal
   dashboard shutdown explicitly revokes its session.
 - The current worktree also has a desktop device-flow client with an abstract
   credential store, OS-keyring adapter, and private-file fallback. It no longer
-  uses `HOST_TOKEN`; online authorization will become usable when the deployed
-  Worker's Access configuration is completed.
+  uses `HOST_TOKEN`; the deployed Access configuration is complete, pending an
+  end-to-end authenticated browser approval smoke test.
 - `evdev` is Linux-marked and AP/uinput imports are lazy. Dolphin configuration
   discovery, preview, atomic idempotent setup, backup, and explicit revert are
   implemented for Windows, macOS, Linux XDG/legacy, Flatpak, environment,
@@ -614,10 +615,11 @@ Authentication is on the critical path before broad packaging.
 
 A fresh coding agent should start here:
 
-1. Complete the Access application/policy on the authentication hostname, set
-   its audience/team secrets, and exercise activation without protecting `/`,
-   controller assets, or session WebSockets. D1, custom domains, migrations,
-   the hashing secret, and deletion of the old shared host secret are complete.
+1. Exercise authenticated activation and credential consumption through the
+   configured Access application. Confirm again that `/`, controller assets,
+   and session WebSockets remain public. D1, custom domains, migrations, the
+   audience/team/hash secrets, and deletion of the old shared host secret are
+   complete.
 2. Run the complete Worker regression suite against a preview deployment,
    including Access activation, one-time verifier consumption, revocation,
    identity/device caps, session alarms, signaling reconnect, retention, and
