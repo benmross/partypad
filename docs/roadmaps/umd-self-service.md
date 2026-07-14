@@ -81,15 +81,16 @@ As of the date above:
   fail-closed activation boundary pass hosted smoke tests. On 2026-07-13, the
   Access application began protecting only the authentication hostname and the
   Worker was configured with its audience and team issuer. Authenticated
-  browser approval still needs an end-to-end smoke test.
+  browser approval, one-time code consumption, credential issuance, and local
+  credential loading passed a production smoke test on 2026-07-13.
 - The deployed service implements verifier-bound device codes, Access-JWT
   browser approval, hashed single-use credentials, device revocation, session
   quotas, a kill switch, retention cleanup, and four-hour sessions. Normal
   dashboard shutdown explicitly revokes its session.
 - The current worktree also has a desktop device-flow client with an abstract
   credential store, OS-keyring adapter, and private-file fallback. It no longer
-  uses `HOST_TOKEN`; the deployed Access configuration is complete, pending an
-  end-to-end authenticated browser approval smoke test.
+  uses `HOST_TOKEN`; the deployed Access configuration and authenticated
+  browser approval flow have passed an end-to-end production smoke test.
 - `evdev` is Linux-marked and AP/uinput imports are lazy. Dolphin configuration
   discovery, preview, atomic idempotent setup, backup, and explicit revert are
   implemented for Windows, macOS, Linux XDG/legacy, Flatpak, environment,
@@ -615,16 +616,11 @@ Authentication is on the critical path before broad packaging.
 
 A fresh coding agent should start here:
 
-1. Exercise authenticated activation and credential consumption through the
-   configured Access application. Confirm again that `/`, controller assets,
-   and session WebSockets remain public. D1, custom domains, migrations, the
-   audience/team/hash secrets, and deletion of the old shared host secret are
-   complete.
-2. Run the complete Worker regression suite against a preview deployment,
+1. Run the complete Worker regression suite against a preview deployment,
    including Access activation, one-time verifier consumption, revocation,
    identity/device caps, session alarms, signaling reconnect, retention, and
    the public policy/status surfaces now covered locally.
-3. Run the configured Windows, macOS Intel/Apple Silicon, and Linux CI for
+2. Run the configured Windows, macOS Intel/Apple Silicon, and Linux CI for
    imports, packaged runtime collection, and Dolphin discovery/setup;
    test the generated mapping with current Dolphin stable and development
    builds on each platform.
