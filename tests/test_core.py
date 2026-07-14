@@ -156,7 +156,8 @@ class OnlineTransportTests(unittest.TestCase):
             )
             store.save(credential)
             self.assertEqual(store.load(), credential)
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            if sys.platform != "win32":
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
             store.delete()
             self.assertIsNone(store.load())
 
@@ -399,7 +400,8 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
             server.write_runtime_state(app)
             value = __import__("json").loads(path.read_text())
             self.assertEqual(value["players"], [])
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            if sys.platform != "win32":
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux uinput backend")
