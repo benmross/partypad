@@ -68,9 +68,12 @@ As of the date above:
   candidates and the immediate WebSocket fallback. The phone diagnostic uses
   WebRTC's `relayProtocol` when available. These paths still need forced-network
   validation outside unit/integration tests.
-- A home-Wi-Fi laptop and cellular phone have been verified with both direct UDP
-  and TURN/UDP. Candidate forwarding and Cloudflare relay allocation have also
-  been exercised independently.
+- A clean Arch Linux source checkout using native Dolphin 2606 completed the
+  dashboard flow on 2026-07-13: device authorization, automatic Dolphin
+  discovery/setup, session start, iPhone controls, direct/UDP on the same
+  Wi-Fi, TURN/UDP on cellular, and dashboard stop. Production state confirmed
+  the device was used and no live session remained. Candidate forwarding and
+  Cloudflare relay allocation have also been exercised independently.
 - On the current multi-homed Linux development laptop, browser-side trickle ICE
   makes negotiation begin immediately; aiortc's local answer gathering commonly
   takes about five seconds because Wi-Fi, IPv6, Tailscale, and libvirt addresses
@@ -108,7 +111,8 @@ As of the date above:
   packaged command smoke tests. Native tag CI is configured for Linux x64,
   Windows x64 plus Inno Setup, macOS Intel, and Apple Silicon with SBOMs,
   checksums, and draft unsigned-alpha releases; those native jobs and a
-  clean-laptop flow have not yet run.
+  packaged clean-laptop flow have not yet run. The equivalent source-checkout
+  flow has passed on Arch Linux with native Dolphin 2606.
 - Reliability work in the worktree includes protocol enforcement, periodic
   selected-path/RTT updates, TURN allocation diagnostics via `relayProtocol`,
   lifecycle neutralization, ICE restart, controlled host TURN URL retries, a
@@ -627,9 +631,9 @@ A fresh coding agent should start here:
 3. Add the Firefox WebRTC smoke to a controlled browser-matrix job, then
    exercise sleep/wake, Wi-Fi/cellular changes, and forced UDP/TCP/TLS TURN
    retry in a scheduled network environment.
-4. Run the clean-laptop dashboard flow end to end with the configured cloud
-   authorization and use the resulting evidence to revise packaging and
-   service-level targets.
+4. Run the packaged Linux artifact through the now-verified clean-laptop
+   dashboard flow, then use the source-versus-package evidence to revise
+   packaging and service-level targets.
 
 Before any Cloudflare deployment, confirm no live game is using the service,
 because deployments disconnect Durable Object WebSockets. Revoke all temporary
