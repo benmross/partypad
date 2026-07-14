@@ -609,8 +609,8 @@ Work in this order unless a documented dependency changes:
 11. Pursue official UMD OIDC only if a UMD-specific need and an institutional
     sponsor/approval path emerge; retain the general login path.
 
-Do not distribute a build with the current shared `HOST_TOKEN` as a shortcut.
-Authentication is on the critical path before broad packaging.
+Do not reintroduce or distribute a shared `HOST_TOKEN` as a shortcut.
+Per-device authentication remains a release gate for broad packaging.
 
 ## Next concrete engineering tasks
 
@@ -624,11 +624,11 @@ A fresh coding agent should start here:
    imports, packaged runtime collection, and Dolphin discovery/setup;
    test the generated mapping with current Dolphin stable and development
    builds on each platform.
-4. Add the Firefox WebRTC smoke to a controlled browser-matrix job, then
+3. Add the Firefox WebRTC smoke to a controlled browser-matrix job, then
    exercise sleep/wake, Wi-Fi/cellular changes, and forced UDP/TCP/TLS TURN
    retry in a scheduled network environment.
-5. After cloud authorization is configured, run the clean-laptop dashboard
-   flow end to end and use the resulting evidence to revise packaging and
+4. Run the clean-laptop dashboard flow end to end with the configured cloud
+   authorization and use the resulting evidence to revise packaging and
    service-level targets.
 
 Before any Cloudflare deployment, confirm no live game is using the service,
