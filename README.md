@@ -304,9 +304,11 @@ before PartyPad is presented as easy to install. See
   standard digital/analog RetroPad and an NES phone layout. Mouse, lightgun,
   paddle, keyboard, rumble, motion, and system-specific layouts are not yet
   implemented. RetroArch support is Linux-only.
-- **Unsigned packaged alpha:** native CI and a locally smoke-tested Linux
-  one-file build exist, but no signed/notarized public artifact has passed a
-  clean-laptop end-to-end test yet. Expect OS security warnings.
+- **Unsigned packaged alpha:** native CI and a locally built Linux one-file
+  executable have passed; the Linux executable completed the configured-user
+  online flow and isolated-home first-run checks. No downloaded release
+  artifact or signed/notarized build has passed a clean-laptop end-to-end test
+  yet. Expect OS security warnings.
 - **Experimental motion:** testing on iPhone Safari and Motorola Chrome found
   opposite gravity polarity in `accelerationIncludingGravity`. PartyPad
   normalizes Android to the working iOS convention before constructing DSU

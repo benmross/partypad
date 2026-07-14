@@ -97,26 +97,29 @@ As of the date above:
 - `evdev` is Linux-marked and AP/uinput imports are lazy. Dolphin configuration
   discovery, preview, atomic idempotent setup, backup, and explicit revert are
   implemented for Windows, macOS, Linux XDG/legacy, Flatpak, environment,
-  portable, and explicit paths, with tests. Native platform CI and real Dolphin
-  stable/development discovery are still outstanding on native platforms. The
-  generated configuration has been accepted by the current Linux Flatpak
-  stable build (Dolphin 2606); no standalone builds have been published.
+  portable, and explicit paths, with tests. Native CI passes on Windows x64,
+  macOS Intel/Apple Silicon, and Linux x64. Real Dolphin discovery/setup and
+  controller mapping have passed with native and Flatpak Dolphin 2606 on Linux;
+  Windows and macOS hardware testing remains outstanding. No standalone builds
+  have been published.
 - The worktree has privacy-safe hourly service aggregates, an Access-subject
   restricted operator metrics/kill-switch API, retention cleanup, and written
   privacy, acceptable-use, support, status, operations, and signing material.
   Account billing alerts still require operator configuration.
 - A token-protected loopback dashboard implements authorization, Dolphin
   setup/revert, system selection, online start/stop, QR/link, player slots, and
-  transport/RTT display. A locally built Linux PyInstaller executable passes
-  packaged command smoke tests. Native tag CI is configured for Linux x64,
-  Windows x64 plus Inno Setup, macOS Intel, and Apple Silicon with SBOMs,
-  checksums, and draft unsigned-alpha releases; those native jobs and a
-  packaged clean-laptop flow have not yet run. The equivalent source-checkout
-  flow has passed on Arch Linux with native Dolphin 2606.
+  transport/RTT display. A locally built Linux PyInstaller executable passed
+  the configured-user online flow and isolated-home first-run checks on Arch
+  Linux. The native packaging workflow passes for Linux x64, Windows x64 plus
+  Inno Setup, macOS Intel, and Apple Silicon, producing unsigned archives and
+  SBOMs. Downloaded-artifact clean-laptop testing and Windows/macOS hardware
+  testing have not yet run.
 - Reliability work in the worktree includes protocol enforcement, periodic
-  selected-path/RTT updates, TURN allocation diagnostics via `relayProtocol`,
-  lifecycle neutralization, ICE restart, controlled host TURN URL retries, a
-  secret-free browser diagnostics export, candidate ordering tests, and host
+  five-second selected-path/RTT display updates with telemetry retained at a
+  thirty-second cadence, TURN allocation diagnostics via `relayProtocol`,
+  lifecycle neutralization, ICE restart, controlled host TURN URL retries,
+  prompt signal-driven dashboard shutdown with concurrent session revocation,
+  a secret-free browser diagnostics export, candidate ordering tests, and host
   signaling reconnect tests. An opt-in headless Firefox smoke now exercises the
   real controller page, trickled ICE, direct WebRTC DataChannel input, and
   pagehide neutralization against aiortc. Browser-matrix CI and
@@ -624,16 +627,15 @@ A fresh coding agent should start here:
    including Access activation, one-time verifier consumption, revocation,
    identity/device caps, session alarms, signaling reconnect, retention, and
    the public policy/status surfaces now covered locally.
-2. Run the configured Windows, macOS Intel/Apple Silicon, and Linux CI for
-   imports, packaged runtime collection, and Dolphin discovery/setup;
-   test the generated mapping with current Dolphin stable and development
-   builds on each platform.
+2. Test the generated mapping with current Dolphin stable and development
+   builds on Windows and macOS hardware. Native CI and packaged command smoke
+   tests already pass on Windows x64, macOS Intel/Apple Silicon, and Linux x64.
 3. Add the Firefox WebRTC smoke to a controlled browser-matrix job, then
    exercise sleep/wake, Wi-Fi/cellular changes, and forced UDP/TCP/TLS TURN
    retry in a scheduled network environment.
-4. Run the packaged Linux artifact through the now-verified clean-laptop
-   dashboard flow, then use the source-versus-package evidence to revise
-   packaging and service-level targets.
+4. Download the CI-built Linux artifact and run it through the now-verified
+   clean-laptop dashboard flow, then use the source-versus-package evidence to
+   revise packaging and service-level targets.
 
 Before any Cloudflare deployment, confirm no live game is using the service,
 because deployments disconnect Durable Object WebSockets. Revoke all temporary
