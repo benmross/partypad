@@ -294,6 +294,9 @@ class DeviceAuthorizationTests(unittest.TestCase):
         self.assertEqual(len(value), 43)
 
     def test_authorize_opens_browser_polls_and_saves(self):
+        import contextlib
+        import io
+
         store = Mock()
         flow = {
             "device_code": "device-code",
@@ -312,7 +315,9 @@ class DeviceAuthorizationTests(unittest.TestCase):
                 "expires_at": "2026-10-11T18:00:00Z",
             },
         }
+        output = io.StringIO()
         with (
+            contextlib.redirect_stdout(output),
             patch.object(device_auth, "begin_authorization", return_value=(flow, "verifier")),
             patch.object(device_auth, "poll_authorization", return_value=approved),
         ):
@@ -326,6 +331,7 @@ class DeviceAuthorizationTests(unittest.TestCase):
         store.open_browser.assert_called_once_with(flow["verification_uri_complete"])
         store.save.assert_called_once_with(credential)
         self.assertEqual(credential.token, "token")
+        self.assertIn(flow["verification_uri_complete"], output.getvalue())
 
     def test_authorize_honors_server_slow_down(self):
         store = Mock()

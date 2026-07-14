@@ -261,6 +261,7 @@ def authorize_device(
     flow, verifier = begin_authorization(service_url, device_name)
     activation_url = flow.get("verification_uri_complete") or flow["verification_uri"]
     print(f"Authorize this laptop in your browser using code {flow['user_code']}.")
+    print(f"Open this activation link: {activation_url}", flush=True)
     open_browser(activation_url)
     deadline = time.monotonic() + min(int(flow["expires_in"]), 900)
     interval = max(1, min(int(flow["interval"]), 30))
