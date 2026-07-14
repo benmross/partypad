@@ -32,14 +32,15 @@ button{cursor:pointer}.error{color:#fca5a5}a{color:#93c5fd;overflow-wrap:anywher
 <div class=card><h2>Authorization</h2><p id=auth>Checking…</p><button onclick="post('/authorize')">Authorize laptop</button></div>
 <div class=card><h2>Dolphin</h2><p id=dolphin>Checking…</p><button onclick="post('/dolphin/setup')">Set up</button><button onclick="post('/dolphin/revert')">Revert</button></div>
 <div class=card><h2>Session</h2><select id=system><option value=wii>Nintendo Wii</option><option value=nes>Nintendo NES (Linux only)</option></select>
-<button onclick="post('/session/start',{system:system.value})">Start online session</button><button onclick="post('/session/stop')">Stop session</button>
+<button onclick="post('/session/start',{system:document.querySelector('#system').value})">Start online session</button><button onclick="post('/session/stop')">Stop session</button>
 <p><a id=join></a></p><img id=qr hidden><div class=players id=players></div></div>
 <div class=card><h2>Diagnostics</h2><code id=logs></code></div>
 <script>
-async function post(path,data={}){let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});let j=await r.json();if(!r.ok)document.querySelector('#error').textContent=j.error||'Request failed';else document.querySelector('#error').textContent='';await refresh()}
-async function refresh(){let s=await (await fetch('/api/status')).json();auth.textContent=s.authorization;dolphin.textContent=s.dolphin;
-join.textContent=s.join_url||'';join.href=s.join_url||'#';qr.hidden=!s.qr;qr.src=s.qr||'';logs.textContent=(s.logs||[]).join('\n');
-players.innerHTML=[1,2,3,4].map(n=>{let p=(s.players||[]).find(x=>x.player===n);return `<div class=player>Player ${n}<br>${p?(p.path+(p.rtt_ms==null?'':' · '+p.rtt_ms+' ms')):'waiting'}</div>`}).join('')}
+const byId=id=>document.getElementById(id);
+async function post(path,data={}){try{let r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});let j=await r.json();if(!r.ok)byId('error').textContent=j.error||'Request failed';else byId('error').textContent='';await refresh()}catch(e){byId('error').textContent='Dashboard request failed: '+e.message}}
+async function refresh(){try{let r=await fetch('/api/status');if(!r.ok)throw new Error(`HTTP ${r.status}`);let s=await r.json();byId('auth').textContent=s.authorization;byId('dolphin').textContent=s.dolphin;
+let join=byId('join'),qr=byId('qr');join.textContent=s.join_url||'';join.href=s.join_url||'#';qr.hidden=!s.qr;qr.src=s.qr||'';byId('logs').textContent=(s.logs||[]).join('\n');
+byId('players').innerHTML=[1,2,3,4].map(n=>{let p=(s.players||[]).find(x=>x.player===n);return `<div class=player>Player ${n}<br>${p?(p.path+(p.rtt_ms==null?'':' · '+p.rtt_ms+' ms')):'waiting'}</div>`}).join('');byId('error').textContent=''}catch(e){byId('error').textContent='Dashboard status failed: '+e.message}}
 setInterval(refresh,1000);refresh();</script>"""
 
 
