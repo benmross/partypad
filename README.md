@@ -41,7 +41,9 @@ phone browser --WebRTC/relay--> PartyPad --DSU/UDP--> Dolphin
 
 ## Requirements
 
-- Linux and Python 3.11 or newer.
+- Python 3.11 or newer. The source workflow and real emulator integration are
+  currently verified on Linux; unsigned Windows and macOS packages build in CI
+  but still need hardware testing.
 - [`uv`](https://docs.astral.sh/uv/) for the documented workflow.
 - Dolphin and/or RetroArch, depending on the selected backend.
 - Access to `/dev/uinput` for RetroArch (commonly provided by the `input` group).
@@ -115,6 +117,9 @@ session:
 ```sh
 uv run python setup_online.py
 ```
+
+The command always prints the complete activation link, so authorization also
+works from SSH and other terminals where a browser cannot open automatically.
 
 The protocol-v1 Worker and production D1 schema are deployed. Cloudflare Access
 protects the authentication hostname, and the Worker is configured to verify
@@ -359,8 +364,12 @@ uv sync --extra online
 uv run python -m unittest discover -s tests -v
 uv run python -m py_compile server.py online_transport.py device_auth.py systems.py uinput_backend.py hotspot.py ap_helper.py setup_dolphin.py setup_online.py setup_retroarch.py dashboard.py partypad.py version.py tools/generate_sbom.py tools/browser_smoke.py
 node --check static/app.js
-cd cloudflare && nvm install && npm ci && npm run check
+cd cloudflare && npm ci && npm run check && npm test
 ```
+
+Cloudflare development requires Node 22.23.x as pinned in
+`cloudflare/.nvmrc`; `nvm` is optional, and any version manager may provide the
+pinned Node release.
 
 An opt-in Firefox smoke test drives the real controller page through trickled
 ICE, WebRTC DataChannel input, and page-lifecycle neutralization. It requires a
