@@ -10,13 +10,23 @@
   --sl: #ffffff;           /* soft shadow light */
 }
 
-* { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 
 html, body {
   margin: 0; height: 100%;
   background: var(--bg); color: var(--ink);
   font-family: system-ui, -apple-system, "Helvetica Neue", sans-serif;
   touch-action: none; overscroll-behavior: none; overflow: hidden;
+}
+
+/* touch-action is not inherited. Setting it on html/body alone leaves every
+   control below defaulting to `auto`, where iOS still runs double-tap-to-zoom
+   (Safari has ignored user-scalable=no since iOS 10). `manipulation` on * kills
+   double-tap zoom page-wide while leaving pinch available to recover from a
+   zoom; the gesture surfaces below take raw touches and opt out entirely. */
+.overlay, .pad, .topbar, .controls, .dpad, .btn, .recenter {
+  touch-action: none;
 }
 .hidden { display: none !important; }
 
