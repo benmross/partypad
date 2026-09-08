@@ -90,6 +90,21 @@ tests and CLIs, but dependency lock/build validation still requires `uv`.
   `~/Library/Application Support/Dolphin/Config` unaided. Use Python 3.12 rather
   than 3.14 for the venv; aiortc's `av`/`pylibsrtp` wheels do not cover 3.14 and
   would fall back to a source build.
+- Room codes live in the D1 `room_codes` table (migration `0003_room_codes.sql`)
+  and map a six-digit code to a session id and its join secret. The join secret
+  is stored in plaintext there because the code must exchange for it; that is a
+  deliberate trade for low-friction rejoining, so keep the row's life short —
+  it is deleted when the session ends and swept by the hourly cron. Apply the
+  migration to remote D1 *before* deploying a Worker that references the table.
+  `GET /api/rooms/<code>` is public and rate limited; that limit is the only
+  thing making a six-digit code viable, so do not loosen it casually.
+- The controller page strips the `#/join/...` fragment via `history.replaceState`
+  when the iOS gate is showing, so "Add to Home Screen" saves the bare origin and
+  the icon outlives the session. `onlineSession` is parsed before the strip, so
+  the current page keeps working. Do not move that parse after the strip.
+- `#install`, `#code` and `#join` all contain `.join-card`, `.sub` and `.hint`.
+  Scope those lookups to their pane (`#join .hint`) or they silently retarget
+  whichever pane comes first in the DOM.
 - Production D1 tracks hosted sessions in `session_owners`, not `sessions`.
   Before a Worker deploy, query for unended/unexpired rows and confirm the count
   is zero. Deploys disconnect active Durable Object sockets.

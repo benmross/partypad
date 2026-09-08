@@ -279,8 +279,8 @@ function applyControllerMode(mode, system) {
     // The udev profile maps those to the east/south physical positions.
     a.dataset.field = "circle";
     b.dataset.field = "cross";
-    document.querySelector(".join-card .sub").textContent = "Tap to grab an NES controller";
-    document.querySelector(".hint").textContent = "Turn your phone sideways for the controller layout.";
+    document.querySelector("#join .sub").textContent = "Tap to grab an NES controller";
+    document.querySelector("#join .hint").textContent = "Turn your phone sideways for the controller layout.";
   } else {
     a.dataset.field = "cross";
     b.dataset.field = "square";
@@ -293,9 +293,7 @@ if (!onlineSession) {
     .then((config) => {
       if (config.online_service) {
         hostedLanding = true;
-        document.querySelector(".join-card .sub").textContent = "No active controller session";
-        document.querySelector(".hint").textContent = "Start PartyPad on the computer, then scan its QR code.";
-        document.getElementById("join-btn").disabled = true;
+        showEntryPane();
       } else {
         applyControllerMode(config.controller_mode || "wii", config.system);
       }
@@ -552,23 +550,86 @@ function showJoin() {
 
 // The install pane ships visible so a gated phone never flashes a Join button it
 // may not use, and so a failed script load still explains what to do. Every
-// other case is switched back to the join pane here.
+// other case is switched back by showEntryPane().
+let gateActive = false;
+
+function showEntryPane() {
+  // Hosted service, no session in the URL: this phone launched from its Home
+  // Screen icon rather than a QR scan, so it needs a room code.
+  const wantsCode = hostedLanding && !onlineSession;
+  document.getElementById("code").classList.toggle("hidden", gateActive || !wantsCode);
+  document.getElementById("join").classList.toggle("hidden", gateActive || wantsCode);
+}
+
 function applyHomeScreenGate() {
-  const gated = IS_IOS && !isStandalone();
-  document.getElementById("install").classList.toggle("hidden", !gated);
-  document.getElementById("join").classList.toggle("hidden", gated);
+  gateActive = IS_IOS && !isStandalone();
+  document.getElementById("install").classList.toggle("hidden", !gateActive);
   // The join card's "add to Home Screen for full-screen" tip is noise once the
   // page is already running as a Home Screen web app.
-  document.querySelector(".join-card .hint").classList.toggle("hidden", isStandalone());
-  return gated;
+  document.querySelector("#join .hint").classList.toggle("hidden", isStandalone());
+  showEntryPane();
+  return gateActive;
 }
 applyHomeScreenGate();
+
+// iOS stores the URL as it stands when "Add to Home Screen" is tapped. Leaving
+// the join fragment in place would bake this session's id and secret into the
+// icon, so the icon would be dead at the next party. onlineSession was already
+// parsed above, so dropping the fragment costs this page nothing and leaves the
+// icon pointing at the bare origin, where the room code takes over.
+if (gateActive && location.hash) {
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
+async function submitRoomCode() {
+  const input = document.getElementById("code-input");
+  const status = document.getElementById("code-status");
+  const button = document.getElementById("code-btn");
+  const digits = input.value.replace(/[^0-9]/g, "");
+  if (digits.length !== 6) {
+    status.textContent = "Enter all six digits.";
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "Looking up…";
+  try {
+    const response = await fetch(`/api/rooms/${digits}`);
+    if (response.status === 429) {
+      status.textContent = "Too many tries. Wait a minute and retry.";
+      return;
+    }
+    if (!response.ok) {
+      status.textContent = "That code is not active. Check the computer screen.";
+      return;
+    }
+    const body = await response.json();
+    // Service responses are untrusted like any other network payload.
+    if (!/^[A-Za-z0-9_-]{16,32}$/.test(body.session) || !/^[A-Za-z0-9_-]{20,128}$/.test(body.secret)) {
+      status.textContent = "Unexpected reply from the service.";
+      return;
+    }
+    // Reloading on the join fragment lets every existing code path see an
+    // ordinary QR-scanned session instead of a second way to start one.
+    location.hash = `#/join/${body.session}/${body.secret}`;
+    location.reload();
+  } catch {
+    status.textContent = "Network error. Try again.";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById("code-btn").addEventListener("click", submitRoomCode);
+document.getElementById("code-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitRoomCode();
+});
 
 // Escape hatch: iOS browsers other than Safari cannot add to the Home Screen at
 // all, and nobody should be stranded at a party. Zoom may misbehave on this path.
 document.getElementById("install-anyway").addEventListener("click", () => {
+  gateActive = false;
   document.getElementById("install").classList.add("hidden");
-  document.getElementById("join").classList.remove("hidden");
+  showEntryPane();
 });
 
 // Defense in depth for that escape hatch and for any browser that ignores

@@ -680,6 +680,7 @@ def write_runtime_state(app) -> None:
         ]
     state = {
         "join_url": session["join_url"],
+        "room_code": session.get("room_code", ""),
         "end_url": session["end_url"],
         "host_secret": session["host_secret"],
         "expires_at": session.get("expires_at"),
@@ -967,6 +968,10 @@ def main(argv=None):
         qr.print_ascii(invert=True)
         print(f"  {url}")
         if args.online:
+            room_code = (app["online_session"] or {}).get("room_code")
+            if room_code:
+                print(f"  room code: {room_code}")
+                print("  (a phone that already has PartyPad can open it and type this)")
             print("  (online session: phones may use Wi-Fi or cellular data)")
         elif not args.http:
             print("  (tap through the one-time certificate warning on each phone)")

@@ -52,7 +52,7 @@ html, body {
    short screen. This pane is the one overlay that may need to scroll, and
    `margin: auto` on the card centers it without the flex overflow clipping
    that `align-items: center` causes once the content is taller than the pane. */
-#install { overflow-y: auto; touch-action: pan-y; align-items: flex-start; }
+#install, #code { overflow-y: auto; touch-action: pan-y; align-items: flex-start; }
 .install-card { max-width: 24rem; margin: auto; padding-top: 2.5rem; padding-bottom: 2.5rem; }
 .install-steps {
   text-align: left; margin: 1.4rem 0 0; padding-left: 1.3rem;
@@ -60,6 +60,20 @@ html, body {
 }
 .install-steps li { margin-bottom: .5rem; }
 .install-steps strong { color: #222; font-weight: 650; }
+.code-input {
+  display: block; width: 100%; max-width: 11rem; margin: 1.6rem auto 0;
+  padding: .7rem .5rem; border: 2px solid var(--ring); border-radius: .7rem;
+  font: inherit; font-size: 2rem; font-weight: 700; text-align: center;
+  letter-spacing: .35em; text-indent: .35em; color: var(--ink); background: #fff;
+  -webkit-user-select: text; user-select: text; touch-action: manipulation;
+}
+.code-input:focus { outline: none; border-color: var(--accent); }
+#code-btn {
+  margin-top: 1.2rem; font-size: 1.1rem; padding: .75rem 2.4rem; border: none;
+  border-radius: 999px; background: var(--accent); color: #fff; font-weight: 700;
+}
+#code-btn:disabled { background: #c9d3db; }
+.code-status { min-height: 1.2rem; margin: .9rem 0 0; font-size: .82rem; color: #d2603f; }
 .linkish {
   margin-top: 1.8rem; background: none; border: none; padding: .5rem;
   font: inherit; font-size: .78rem; color: #aab0b8;

@@ -219,6 +219,49 @@ function sameSecret(left: string, right: string): boolean {
   return difference === 0;
 }
 
+// Six digits keeps the code fast to type on a phone keypad. Rejection sampling
+// avoids the modulo bias a plain `% 1e6` over 2**32 would introduce.
+function randomRoomCode(): string {
+  const limit = 4_000_000_000; // largest multiple of 1e6 below 2**32
+  const value = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(value);
+  } while (value[0] >= limit);
+  return String(value[0] % 1_000_000).padStart(6, "0");
+}
+
+// Returns null rather than throwing if every attempt collides: a session
+// without a room code still works from its QR code, so a failure here must not
+// take the session down with it.
+async function issueRoomCode(
+  env: Env,
+  sessionId: string,
+  joinSecret: string,
+  nowSeconds: number,
+  expiresSeconds: number,
+): Promise<string | null> {
+  try {
+    await env.DB.prepare("DELETE FROM room_codes WHERE expires_at <= ?").bind(nowSeconds).run();
+  } catch {
+    // Reaching the table at all is best-effort: a session must still be
+    // creatable from its QR code if room codes are unavailable.
+    return null;
+  }
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const code = randomRoomCode();
+    try {
+      await env.DB.prepare(
+        `INSERT INTO room_codes (code, session_id, join_secret, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).bind(code, sessionId, joinSecret, nowSeconds, expiresSeconds).run();
+      return code;
+    } catch {
+      // PRIMARY KEY collision with a live code; draw another.
+    }
+  }
+  return null;
+}
+
 async function rateLimited(
   env: Env,
   request: Request,
@@ -747,6 +790,20 @@ export default {
         download_url: DOWNLOAD_URL,
       });
     }
+    const roomMatch = url.pathname.match(/^\/api\/rooms\/([0-9]{6})$/);
+    if (request.method === "GET" && roomMatch) {
+      // A six-digit code is guessable by design, so the only thing standing
+      // between a scanner and a live session is this limit. Keep it tight.
+      if (await rateLimited(env, request, "room_lookup", 15, 60)) {
+        return json({ error: "too many attempts" }, 429);
+      }
+      const row = await env.DB.prepare(
+        "SELECT session_id, join_secret FROM room_codes WHERE code = ? AND expires_at > ?",
+      ).bind(roomMatch[1], Math.floor(Date.now() / 1000))
+        .first<{ session_id: string; join_secret: string }>();
+      if (!row) return json({ error: "unknown or expired code" }, 404);
+      return json({ session: row.session_id, secret: row.join_secret });
+    }
     if ((request.method === "GET" || request.method === "POST") && url.pathname === "/activate") {
       return activate(request, env);
     }
@@ -833,6 +890,13 @@ export default {
           .bind(nowSeconds, device.device_id),
       ]);
       await recordMetric(env, "session_create");
+      const roomCode = await issueRoomCode(
+        env,
+        id,
+        joinSecret,
+        nowSeconds,
+        Math.floor(expiresAt / 1000),
+      );
 
       let rotatedDeviceToken: string | undefined;
       let rotatedExpiresAt: number | undefined;
@@ -869,6 +933,7 @@ export default {
           end_url: `${origin}/api/sessions/${id}`,
           ice_servers: iceServers,
           expires_at: new Date(expiresAt).toISOString(),
+          ...(roomCode ? { room_code: roomCode } : {}),
           ...(rotatedDeviceToken && rotatedExpiresAt
             ? {
                 rotated_device_token: rotatedDeviceToken,
@@ -896,6 +961,8 @@ export default {
           "UPDATE session_owners SET ended_at = ? WHERE session_id = ? AND ended_at IS NULL",
         ).bind(Math.floor(Date.now() / 1000), sessionMatch[1]).run();
         if ((ended.meta.changes ?? 0) === 1) await recordMetric(env, "session_end");
+        await env.DB.prepare("DELETE FROM room_codes WHERE session_id = ?")
+          .bind(sessionMatch[1]).run();
       }
       return response;
     }
@@ -911,6 +978,7 @@ export default {
     const now = Math.floor(Date.now() / 1000);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM rate_limits WHERE expires_at <= ?").bind(now),
+      env.DB.prepare("DELETE FROM room_codes WHERE expires_at <= ?").bind(now),
       env.DB.prepare("DELETE FROM aggregate_metrics WHERE hour <= ?").bind(now - 13 * 31 * 86400),
       env.DB.prepare("DELETE FROM session_owners WHERE expires_at <= ?").bind(now - 86400),
       env.DB.prepare("DELETE FROM device_authorizations WHERE delete_after <= ?").bind(now),

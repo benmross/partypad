@@ -94,6 +94,11 @@ def create_session(
     required = ("id", "host_secret", "join_url", "ws_url", "end_url", "ice_servers")
     if not isinstance(result, dict) or any(key not in result for key in required):
         raise RuntimeError("session service returned an incomplete response")
+    # Optional: a session stays perfectly usable from its QR code without one,
+    # so a malformed value is dropped rather than failing the session.
+    code = result.get("room_code")
+    if code is not None and not (isinstance(code, str) and len(code) == 6 and code.isdigit()):
+        result.pop("room_code", None)
     rotated = result.get("rotated_device_token")
     rotated_expiry = result.get("device_token_expires_at")
     if rotated is not None or rotated_expiry is not None:

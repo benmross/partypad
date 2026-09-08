@@ -24,10 +24,25 @@
         first if you do not see it.</li>
         <li>Leave <strong>Open as Web App</strong> on, tap <strong>Add</strong>, then
         launch <strong>partypad</strong> from your Home Screen.</li>
+        <li>Type the <strong>room code</strong> shown on the computer, under its QR code.
+        The icon keeps working for future sessions, so this is a one-time setup.</li>
       </ol>
       <p class="hint">Safari zooms in when you double-tap, which makes the
       buttons unusable mid-game. The Home Screen app does not.</p>
       <button id="install-anyway" class="linkish">Continue in Safari anyway</button>
+    </div>
+  </div>
+
+  <div id="code" class="overlay hidden">
+    <div class="join-card">
+      <h1>partypad</h1>
+      <p class="sub">Enter the room code</p>
+      <input id="code-input" class="code-input" type="text" inputmode="numeric"
+             autocomplete="off" maxlength="6" placeholder="000000"
+             aria-label="Six digit room code">
+      <button id="code-btn">Connect</button>
+      <p id="code-status" class="code-status"></p>
+      <p class="hint">The code is on the computer running PartyPad, under the QR code.</p>
     </div>
   </div>
 

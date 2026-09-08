@@ -82,7 +82,8 @@ async function createSession(token: string) {
     body: JSON.stringify({ system: "wii", system_name: "Wii", controller_mode: "wii", backend: "dolphin" }),
   }), env);
   expect(response.status).toBe(201);
-  return response.json<{ ws_url: string; host_secret: string; join_url: string; end_url: string }>();
+  return response.json<{ ws_url: string; host_secret: string; join_url: string; end_url: string;
+    room_code: string }>();
 }
 
 function nextMessage(socket: WebSocket): Promise<Record<string, unknown>> {
@@ -421,5 +422,69 @@ describe("PartyPad Worker", () => {
     ), env);
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: "device_limit" });
+  });
+  it("issues a room code that exchanges for the session join secret", async () => {
+    const token = await issueDeviceToken();
+    const session = await createSession(token);
+    expect(session.room_code).toMatch(/^[0-9]{6}$/);
+
+    const response = await worker.fetch(
+      new Request(`https://partypad.test/api/rooms/${session.room_code}`), env,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{ session: string; secret: string }>();
+    // The exchanged pair must reconstruct exactly the URL the QR code carries.
+    expect(`https://partypad.test/#/join/${body.session}/${body.secret}`).toBe(session.join_url);
+  });
+
+  it("rejects unknown room codes", async () => {
+    await env.DB.prepare("DELETE FROM rate_limits").run();
+    const response = await worker.fetch(
+      new Request("https://partypad.test/api/rooms/000000"), env,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: "unknown or expired code" });
+  });
+
+  it("retires the room code when the session ends", async () => {
+    await env.DB.prepare("DELETE FROM rate_limits").run();
+    const token = await issueDeviceToken();
+    const session = await createSession(token);
+    const ended = await worker.fetch(new Request(session.end_url, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: session.host_secret }),
+    }), env);
+    expect(ended.status).toBe(204);
+
+    const response = await worker.fetch(
+      new Request(`https://partypad.test/api/rooms/${session.room_code}`), env,
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("rate limits room code guessing", async () => {
+    await env.DB.prepare("DELETE FROM rate_limits").run();
+    let lastStatus = 0;
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const response = await worker.fetch(
+        new Request("https://partypad.test/api/rooms/123456"), env,
+      );
+      lastStatus = response.status;
+    }
+    expect(lastStatus).toBe(429);
+  });
+
+  it("sweeps expired room codes on the cron", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(
+      `INSERT INTO room_codes (code, session_id, join_secret, created_at, expires_at)
+       VALUES ('999999', 'sess_expired', 'secret', ?, ?)`,
+    ).bind(now - 100, now - 10).run();
+    await worker.scheduled!(createScheduledController({ cron: "17 * * * *" }), env, {
+      waitUntil() {}, passThroughOnException() {},
+    } as ExecutionContext);
+    const row = await env.DB.prepare("SELECT code FROM room_codes WHERE code = '999999'").first();
+    expect(row).toBeNull();
   });
 });

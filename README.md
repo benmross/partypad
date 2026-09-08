@@ -26,6 +26,8 @@ phone browser --WebRTC/relay--> PartyPad --DSU/UDP--> Dolphin
 ## What works today
 
 - Up to four browser controllers with fixed DSU/cemuhook slots.
+- A six-digit room code so a phone that already has PartyPad on its Home Screen
+  can join a new session without scanning a QR code again.
 - A disconnected phone's player slot is held for 30 seconds and reclaimed when
   that browser reconnects; a new phone cannot take the reserved slot meanwhile.
 - Wii Remote buttons, D-pad, accelerometer, optional gyroscope, and IR pointer.
@@ -134,6 +136,16 @@ when Python's optional `keyring` package exposes one, with a private user config
 file as the fallback. `--status` shows the local authorization state and
 `--forget` removes the local copy (use the authenticated device page to revoke
 the server-side credential).
+
+Each online session also prints a six-digit room code under the QR code and
+shows it on the dashboard. A phone that already has PartyPad on its Home Screen
+opens the icon and types that code instead of scanning: the Worker exchanges the
+code for the session's join secret and the controller connects normally. Codes
+are issued per session, are retired the moment the session ends, and are swept
+hourly, so an old code never reaches a new session. Lookups are rate limited to
+15 per minute per address, which is what keeps a six-digit code workable; treat
+a live code as a low-value shared secret like the QR code itself, not as
+authentication.
 
 The QR points to `https://partypad.benmross.com`. Phones do not need to share a
 network with the computer. Both sides make outbound connections; WebRTC ICE
@@ -327,8 +339,9 @@ before PartyPad is presented as easy to install. See
   Add-to-Home-Screen instructions in place of the Join button and play from the
   standalone web app, where the viewport meta is honored. A "Continue in Safari
   anyway" link remains for iOS browsers that cannot install to the Home Screen.
-  Android Chrome honors `touch-action` and is not gated. The Home Screen icon
-  stores that session's join URL, so a later session needs the icon re-added.
+  Android Chrome honors `touch-action` and is not gated. The icon is added
+  without the session fragment, so it keeps working for later sessions: the
+  player opens it and types that session's room code.
 - **Local self-signed HTTPS:** browser warnings are expected in local and AP
   modes. Online sessions use a publicly trusted certificate and do not warn.
 - **AP hardware constraints:** some adapters cannot run client and AP modes at
