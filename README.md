@@ -253,9 +253,9 @@ change unless `--force` explicitly overrides the protection.
 | HOME | PS | Home |
 | D-pad | Pad N/S/W/E | D-pad |
 
-For Mario Kart-style steering, keep screen autorotation locked and hold the
-phone in landscape with its top edge pointing left, like a horizontal Wii
-Remote. Tap the player status on the controller to show live motion diagnostics.
+For games steered by tilting the remote, keep screen autorotation locked and
+hold the phone in landscape with its top edge pointing left, like a horizontal
+Wii Remote. Tap the player status on the controller to show live motion diagnostics.
 For comparative device testing, start the server with `--log`; JSONL samples are
 written under the ignored `logs/` directory.
 
@@ -318,12 +318,12 @@ before PartyPad is presented as easy to install. See
   opposite gravity polarity in `accelerationIncludingGravity`. PartyPad
   normalizes Android to the working iOS convention before constructing DSU
   motion data. Other browser and hardware combinations still need verification.
-- **Wii orientation:** the touch layout is portrait-oriented, while verified
-  Mario Kart steering uses the phone sideways with autorotation locked and its
-  top edge pointing left. Other grip orientations are not yet normalized.
+- **Wii orientation:** the touch layout is portrait-oriented, while the only
+  verified steering grip holds the phone sideways with autorotation locked and
+  its top edge pointing left. Other grip orientations are not yet normalized.
 - **iPhone Home Screen requirement:** iOS Safari ignores both `user-scalable=no`
   and `touch-action` for double-tap zoom, so a stray double tap zooms the
-  controller mid-race with no practical way back. iPhones are therefore shown
+  controller mid-game with no practical way back. iPhones are therefore shown
   Add-to-Home-Screen instructions in place of the Join button and play from the
   standalone web app, where the viewport meta is honored. A "Continue in Safari
   anyway" link remains for iOS browsers that cannot install to the Home Screen.

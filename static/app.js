@@ -35,7 +35,7 @@ const onlineMatch = location.hash.match(/^#\/join\/([A-Za-z0-9_-]{16,32})\/([A-Z
 const onlineSession = onlineMatch ? { id: onlineMatch[1], secret: onlineMatch[2] } : null;
 
 // iOS Safari is the one tested browser that ignores BOTH `user-scalable=no` and
-// `touch-action` for double-tap zoom: a mid-race double tap zooms the pad and
+// `touch-action` for double-tap zoom: a mid-game double tap zooms the pad and
 // leaves the player unable to zoom back out. Launching from the Home Screen runs
 // the page as a standalone web app, where the viewport meta is honored, so the
 // gate below is the actual fix rather than a preference.
