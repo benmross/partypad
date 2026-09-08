@@ -8,10 +8,29 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#ffffff">
 <title>partypad</title>
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div id="join" class="overlay">
+  <div id="install" class="overlay">
+    <div class="join-card install-card">
+      <h1>partypad</h1>
+      <p class="sub">Add to your Home Screen first</p>
+      <ol class="install-steps">
+        <li>In the Safari toolbar tap <strong>⋯</strong>, then <strong>Share</strong>.
+        On older iOS, tap the <strong>Share</strong> icon directly.</li>
+        <li>Choose <strong>Add to Home Screen</strong>. Tap <strong>View More</strong>
+        first if you do not see it.</li>
+        <li>Leave <strong>Open as Web App</strong> on, tap <strong>Add</strong>, then
+        launch <strong>partypad</strong> from your Home Screen.</li>
+      </ol>
+      <p class="hint">Safari zooms in when you double-tap, which makes the
+      buttons unusable mid-race. The Home Screen app does not.</p>
+      <button id="install-anyway" class="linkish">Continue in Safari anyway</button>
+    </div>
+  </div>
+
+  <div id="join" class="overlay hidden">
     <div class="join-card">
       <h1>partypad</h1>
       <p class="sub">Tap to grab a controller</p>

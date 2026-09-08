@@ -47,6 +47,25 @@ html, body {
 #join-btn:active { transform: scale(.96); }
 .hint { margin-top: 1.6rem; font-size: .78rem; color: #aab0b8; line-height: 1.4; }
 
+/* ---- home-screen gate ---- */
+/* .overlay sets touch-action: none, which would trap the instructions on a
+   short screen. This pane is the one overlay that may need to scroll, and
+   `margin: auto` on the card centers it without the flex overflow clipping
+   that `align-items: center` causes once the content is taller than the pane. */
+#install { overflow-y: auto; touch-action: pan-y; align-items: flex-start; }
+.install-card { max-width: 24rem; margin: auto; padding-top: 2.5rem; padding-bottom: 2.5rem; }
+.install-steps {
+  text-align: left; margin: 1.4rem 0 0; padding-left: 1.3rem;
+  font-size: .95rem; line-height: 1.65; color: #4a515a;
+}
+.install-steps li { margin-bottom: .5rem; }
+.install-steps strong { color: #222; font-weight: 650; }
+.linkish {
+  margin-top: 1.8rem; background: none; border: none; padding: .5rem;
+  font: inherit; font-size: .78rem; color: #aab0b8;
+  text-decoration: underline; text-underline-offset: .2em;
+}
+
 /* ---- pad ---- */
 .pad { position: fixed; top: 0; left: 0; width: 100%; height: 100svh;
        display: flex; flex-direction: column;

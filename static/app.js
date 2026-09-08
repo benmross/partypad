@@ -34,6 +34,25 @@ const CLIENT_ID_KEY = "partypad-controller-id";
 const onlineMatch = location.hash.match(/^#\/join\/([A-Za-z0-9_-]{16,32})\/([A-Za-z0-9_-]{20,128})$/);
 const onlineSession = onlineMatch ? { id: onlineMatch[1], secret: onlineMatch[2] } : null;
 
+// iOS Safari is the one tested browser that ignores BOTH `user-scalable=no` and
+// `touch-action` for double-tap zoom: a mid-race double tap zooms the pad and
+// leaves the player unable to zoom back out. Launching from the Home Screen runs
+// the page as a standalone web app, where the viewport meta is honored, so the
+// gate below is the actual fix rather than a preference.
+//
+// Android Chrome honors touch-action, so it is deliberately NOT gated. The
+// friction would buy nothing there, and shipping a manifest to make Android
+// installable would replace the launch URL with `start_url`, dropping the
+// `#/join/<id>/<secret>` fragment that carries the session.
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+function isStandalone() {
+  if (window.navigator.standalone === true) return true;
+  return ["standalone", "fullscreen", "minimal-ui"]
+    .some((mode) => window.matchMedia(`(display-mode: ${mode})`).matches);
+}
+
 function controllerId() {
   const makeId = () => crypto.randomUUID
     ? crypto.randomUUID().replaceAll("-", "")
@@ -530,6 +549,39 @@ function showJoin() {
   document.getElementById("join").classList.remove("hidden");
   document.getElementById("pad").classList.add("hidden");
 }
+
+// The install pane ships visible so a gated phone never flashes a Join button it
+// may not use, and so a failed script load still explains what to do. Every
+// other case is switched back to the join pane here.
+function applyHomeScreenGate() {
+  const gated = IS_IOS && !isStandalone();
+  document.getElementById("install").classList.toggle("hidden", !gated);
+  document.getElementById("join").classList.toggle("hidden", gated);
+  // The join card's "add to Home Screen for full-screen" tip is noise once the
+  // page is already running as a Home Screen web app.
+  document.querySelector(".join-card .hint").classList.toggle("hidden", isStandalone());
+  return gated;
+}
+applyHomeScreenGate();
+
+// Escape hatch: iOS browsers other than Safari cannot add to the Home Screen at
+// all, and nobody should be stranded at a party. Zoom may misbehave on this path.
+document.getElementById("install-anyway").addEventListener("click", () => {
+  document.getElementById("install").classList.add("hidden");
+  document.getElementById("join").classList.remove("hidden");
+});
+
+// Defense in depth for that escape hatch and for any browser that ignores
+// touch-action: block the pinch gesture outright and swallow the second tap of a
+// double tap. Pad input is pointer-event based, so suppressing the compatibility
+// click here cannot affect button or D-pad response.
+document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener("touchend", (e) => {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 350) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
 
 document.getElementById("join-btn").addEventListener("click", join);
 document.getElementById("status").addEventListener("click", () => {

@@ -41,9 +41,9 @@ phone browser --WebRTC/relay--> PartyPad --DSU/UDP--> Dolphin
 
 ## Requirements
 
-- Python 3.11 or newer. The source workflow and real emulator integration are
-  currently verified on Linux; unsigned Windows and macOS packages build in CI
-  but still need hardware testing.
+- Python 3.11 or newer. The source workflow and real Dolphin integration are
+  verified on Linux and on macOS (Apple Silicon); unsigned Windows and macOS
+  packages build in CI but still need hardware testing.
 - [`uv`](https://docs.astral.sh/uv/) for the documented workflow.
 - Dolphin and/or RetroArch, depending on the selected backend.
 - Access to `/dev/uinput` for RetroArch (commonly provided by the `input` group).
@@ -321,6 +321,14 @@ before PartyPad is presented as easy to install. See
 - **Wii orientation:** the touch layout is portrait-oriented, while verified
   Mario Kart steering uses the phone sideways with autorotation locked and its
   top edge pointing left. Other grip orientations are not yet normalized.
+- **iPhone Home Screen requirement:** iOS Safari ignores both `user-scalable=no`
+  and `touch-action` for double-tap zoom, so a stray double tap zooms the
+  controller mid-race with no practical way back. iPhones are therefore shown
+  Add-to-Home-Screen instructions in place of the Join button and play from the
+  standalone web app, where the viewport meta is honored. A "Continue in Safari
+  anyway" link remains for iOS browsers that cannot install to the Home Screen.
+  Android Chrome honors `touch-action` and is not gated. The Home Screen icon
+  stores that session's join URL, so a later session needs the icon re-added.
 - **Local self-signed HTTPS:** browser warnings are expected in local and AP
   modes. Online sessions use a publicly trusted certificate and do not warn.
 - **AP hardware constraints:** some adapters cannot run client and AP modes at

@@ -82,7 +82,14 @@ tests and CLIs, but dependency lock/build validation still requires `uv`.
   Arch Dolphin 2606, direct/UDP Wi-Fi, TURN/UDP cellular, and clean session stop
   have passed. CI package builds and command smoke tests pass on Linux x64,
   Windows x64, macOS Intel, and macOS Apple Silicon. Downloaded-artifact clean-
-  laptop testing and real Windows/macOS Dolphin testing remain outstanding.
+  laptop testing and real Windows Dolphin testing remain outstanding.
+- macOS Dolphin is verified as of 2026-09-07: Apple Silicon on macOS 26.6 with
+  Dolphin 2606 from `/Applications`, running the source checkout under a uv
+  Python 3.12 venv, playing Mario Kart Wii with phone controllers over an online
+  session on UMD eduroam. `setup_dolphin.py` discovered
+  `~/Library/Application Support/Dolphin/Config` unaided. Use Python 3.12 rather
+  than 3.14 for the venv; aiortc's `av`/`pylibsrtp` wheels do not cover 3.14 and
+  would fall back to a source build.
 - Production D1 tracks hosted sessions in `session_owners`, not `sessions`.
   Before a Worker deploy, query for unended/unexpired rows and confirm the count
   is zero. Deploys disconnect active Durable Object sockets.
